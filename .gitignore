@@ -1,0 +1,31 @@
+﻿# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+coverage/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Local tooling and OS files
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Archived submission packages
+/backend.zip
+/frontend.zip
+
+# Local AI development configuration
+/.kiro/
