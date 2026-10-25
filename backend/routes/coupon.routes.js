@@ -67,7 +67,7 @@ router.post('/validate', async (req, res) => {
       return res.status(400).json({ success: false, message: "Coupon code is required" });
     }
 
-    // 💡 Upgrade 1: Force uppercase and trim spaces so typing mistakes don't fail
+    //  Upgrade 1: Force uppercase and trim spaces so typing mistakes don't fail
     const cleanCode = couponCode.trim().toUpperCase();
 
     // Find the coupon
@@ -81,7 +81,7 @@ router.post('/validate', async (req, res) => {
       return res.status(400).json({ success: false, message: "This coupon is no longer active" });
     }
 
-    // 💡 Upgrade 2: Fully flexible date check to ensure it never expires during presentation
+    // Upgrade 2: Fully flexible date check to ensure it never expires during presentation
     const currentDate = new Date();
     if (coupon.expiryDate && new Date(coupon.expiryDate) < currentDate) {
       // Temporary override if your computer date settings are out of sync
