@@ -1,4 +1,3 @@
-
 import express from "express";
 import mongoose from "mongoose";
 import { protect } from "../middleware/auth.middleware.js";
@@ -6,6 +5,13 @@ import Restaurant from "../models/restaurant.model.js";
 import Order from "../models/order.model.js";
 
 const router = express.Router();
+
+/**
+ * @swagger
+ * tags:
+ *   name: Owner Dashboard & Operations
+ *   description: Restaurant metrics dashboard tracking, historical order management, and workflow status operations
+ */
 
 router.use(protect);
 
@@ -41,7 +47,25 @@ const getOwnerRestaurant = async (req, res) => {
   return restaurant;
 };
 
-// GET /api/owner/dashboard
+/**
+ * @swagger
+ * /api/owner/dashboard:
+ *   get:
+ *     summary: Retrieve real-time sales revenue metrics and counts (Owner Only)
+ *     description: Computes total active checkout orders, accumulates today's revenue calculations, and checks total historical volume constraints. Requires a restaurant owner bearer token.
+ *     tags: [Owner Dashboard & Operations]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Dashboard summary metrics loaded successfully.
+ *       403:
+ *         description: Forbidden - Requires a restaurant_owner profile signature.
+ *       404:
+ *         description: Not Found - Active restaurant mapping target missing.
+ *       500:
+ *         description: Internal runtime breakdown.
+ */
 router.get("/dashboard", async (req, res) => {
   try {
     const restaurant = await getOwnerRestaurant(req, res);
@@ -94,7 +118,6 @@ router.get("/dashboard", async (req, res) => {
     });
   } catch (error) {
     console.error("Owner dashboard error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Unable to load dashboard metrics.",
@@ -102,7 +125,25 @@ router.get("/dashboard", async (req, res) => {
   }
 });
 
-// GET /api/owner/orders
+/**
+ * @swagger
+ * /api/owner/orders:
+ *   get:
+ *     summary: Fetch latest historical orders received by this restaurant (Owner Only)
+ *     description: Streams incoming order documents matching this business profile, sorted by date descending up to a maximum limit of 100 entries. Requires a restaurant owner bearer token.
+ *     tags: [Owner Dashboard & Operations]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: History logs fetched cleanly.
+ *       403:
+ *         description: Forbidden - Owner credentials missing.
+ *       404:
+ *         description: Active restaurant entity missing.
+ *       500:
+ *         description: Internal server error.
+ */
 router.get("/orders", async (req, res) => {
   try {
     const restaurant = await getOwnerRestaurant(req, res);
@@ -122,7 +163,6 @@ router.get("/orders", async (req, res) => {
     });
   } catch (error) {
     console.error("Owner orders error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Unable to load restaurant orders.",
@@ -130,7 +170,48 @@ router.get("/orders", async (req, res) => {
   }
 });
 
-// PATCH /api/owner/orders/:id/status
+/**
+ * @swagger
+ * /api/owner/orders/{id}/status:
+ *   patch:
+ *     summary: Update an order status through permitted tracking sequences (Owner Only)
+ *     description: Transitions order states sequentially (e.g., PLACED to RESTAURANT_ACCEPTED or CANCELLED, READY to OUT_FOR_DELIVERY) and fires Socket.io notifications to all active dashboard channels. Requires a restaurant owner bearer token.
+ *     tags: [Owner Dashboard & Operations]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Unique 24-character hexadecimal MongoDB ObjectId of the target order record
+ *         example: 65cc2b9c8e1f3a002b5c6789
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - orderStatus
+ *             properties:
+ *               orderStatus:
+ *                 type: string
+ *                 enum: [RESTAURANT_ACCEPTED, CANCELLED, PREPARING, READY, OUT_FOR_DELIVERY, DELIVERED]
+ *                 example: RESTAURANT_ACCEPTED
+ *     responses:
+ *       200:
+ *         description: Step transition applied successfully and event signals routed.
+ *       400:
+ *         description: Malformed syntax parameter or illegal transition rule violation.
+ *       403:
+ *         description: Forbidden profile contextual permission.
+ *       404:
+ *         description: Target order document not found under this business profile space.
+ *       500:
+ *         description: Internal validation pipeline runtime failure.
+ */
 router.patch("/orders/:id/status", async (req, res) => {
   try {
     if (!mongoose.isValidObjectId(req.params.id)) {
@@ -189,21 +270,11 @@ router.patch("/orders/:id/status", async (req, res) => {
         orderStatus: order.orderStatus,
       };
 
-      // Notify the KTJ admin dashboard.
       io.to("admins").emit("order-updated", payload);
+      io.to(`restaurant:${restaurant._id}`).emit("order-updated", payload);
 
-      // Notify this restaurant's owner dashboard.
-      io.to(`restaurant:${restaurant._id}`).emit(
-        "order-updated",
-        payload
-      );
-
-      // Notify the customer who placed the order.
       if (order.customer) {
-        io.to(`customer:${order.customer.toString()}`).emit(
-          "order-updated",
-          payload
-        );
+        io.to(`customer:${order.customer.toString()}`).emit("order-updated", payload);
       }
     }
 
@@ -219,7 +290,6 @@ router.patch("/orders/:id/status", async (req, res) => {
     });
   } catch (error) {
     console.error("Owner order-status update error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Unable to update order status.",
