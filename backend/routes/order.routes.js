@@ -1,48 +1,433 @@
+
 import express from "express";
-import { protect } from '../middleware/auth.middleware.js';
-import Order from '../models/order.model.js'; // 💡 FIXED: Added missing database model import
-import { getOrderById } from "../controllers/order.controller.js";
+import mongoose from "mongoose";
+import { randomUUID } from "node:crypto";
+import { protect } from "../middleware/auth.middleware.js";
+import Order from "../models/order.model.js";
+import Restaurant from "../models/restaurant.model.js";
 
 const router = express.Router();
 
-// POST /api/orders - Create an order securely linked to the true authenticated customer token
-router.post('/', protect, async (req, res) => {
-  try {
-    const { items, totalAmount, paymentMethod, address, phone, city, pincode } = req.body;
-    
-    // Extracted directly from our decoded JWT gatekeeper middleware
-    const customerId = req.user._id; 
+const validId = (id) => {
+  if (typeof id !== "string") return false;
+  return mongoose.Types.ObjectId.isValid(id.trim());
+};
 
-    const newOrder = new Order({
-      customerId,
-      items,
-      totalAmount,
-      paymentMethod,
-      address,
-      phone,
-      city,
-      pincode,
-      status: 'Pending'
+const calculateCouponDiscount = (couponCode, subtotal) => {
+  if (!couponCode) {
+    return { valid: true, discount: 0 };
+  }
+
+  if (couponCode !== "FIRST50") {
+    return {
+      valid: false,
+      message: "Invalid coupon code.",
+    };
+  }
+
+  return {
+    valid: true,
+    discount: Math.round(Math.min(50, subtotal * 0.1) * 100) / 100,
+  };
+};
+
+// POST /api/orders — Create one order per restaurant.
+router.post("/", protect, async (req, res) => {
+  let checkoutId;
+  let createdOrders = [];
+
+  try {
+    console.log("[ORDER] Request received", {
+      customerId: req.user?._id?.toString(),
+      body: JSON.stringify(req.body),
     });
 
-    await newOrder.save();
-    return res.status(201).json({ success: true, orderId: newOrder._id });
+    const {
+      restaurant: restaurantId,
+      items,
+      restaurants,
+      deliveryAddress,
+      phone,
+      paymentMethod,
+      couponCode = "",
+    } = req.body ?? {};
+
+    if (!req.user?._id) {
+      return res.status(401).json({
+        success: false,
+        message: "Authenticated customer not found.",
+      });
+    }
+
+    if (!["COD", "ONLINE"].includes(paymentMethod)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid payment method. Use COD or ONLINE.",
+      });
+    }
+
+    const groups = Array.isArray(restaurants)
+      ? restaurants
+      : [{ restaurant: restaurantId, items }];
+
+    if (
+      groups.length === 0 ||
+      groups.some(
+        (group) =>
+          !validId(group?.restaurant) ||
+          !Array.isArray(group.items) ||
+          group.items.length === 0
+      )
+    ) {
+      console.error("[ORDER] Invalid restaurant groups", groups);
+
+      return res.status(400).json({
+        success: false,
+        message:
+          "Provide at least one valid restaurant order. Check the restaurant ID sent by checkout.",
+      });
+    }
+
+    const restaurantIds = groups.map((group) =>
+      String(group.restaurant).trim()
+    );
+
+    if (new Set(restaurantIds).size !== restaurantIds.length) {
+      return res.status(400).json({
+        success: false,
+        message: "Each restaurant must appear only once per checkout.",
+      });
+    }
+
+    if (
+      !deliveryAddress ||
+      typeof deliveryAddress.street !== "string" ||
+      !deliveryAddress.street.trim() ||
+      typeof deliveryAddress.city !== "string" ||
+      !deliveryAddress.city.trim() ||
+      typeof deliveryAddress.state !== "string" ||
+      !deliveryAddress.state.trim() ||
+      typeof deliveryAddress.postalCode !== "string" ||
+      !deliveryAddress.postalCode.trim()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide a complete delivery address.",
+      });
+    }
+
+    if (typeof phone !== "string" || !phone.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "A phone number is required.",
+      });
+    }
+
+    const restaurantDocuments = await Restaurant.find({
+      _id: { $in: restaurantIds },
+      isActive: true,
+    });
+
+    const restaurantsById = new Map(
+      restaurantDocuments.map((restaurant) => [
+        restaurant._id.toString(),
+        restaurant,
+      ])
+    );
+
+    if (restaurantsById.size !== groups.length) {
+      console.error("[ORDER] Restaurant lookup mismatch", {
+        requestedIds: restaurantIds,
+        foundIds: [...restaurantsById.keys()],
+      });
+
+      return res.status(404).json({
+        success: false,
+        message: "A restaurant was not found or is currently inactive.",
+      });
+    }
+
+    if (typeof couponCode !== "string") {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid coupon code format.",
+      });
+    }
+
+    const normalizedCoupon = couponCode.trim().toUpperCase();
+
+    const normalizedGroups = groups.map((group) => {
+      const restaurant = restaurantsById.get(
+        String(group.restaurant).trim()
+      );
+
+      const normalizedItems = [];
+
+      for (const item of group.items) {
+        const dishId =
+          typeof item?.dishId === "string" ? item.dishId.trim() : "";
+
+        if (!validId(dishId)) {
+          throw Object.assign(
+            new Error("Every cart item must have a valid menu-item ID."),
+            { statusCode: 400 }
+          );
+        }
+
+        const dish = restaurant.menu.id(dishId);
+
+        if (!dish) {
+          throw Object.assign(
+            new Error(
+              `Dish ID ${dishId} does not belong to restaurant ${restaurant.name}.`
+            ),
+            { statusCode: 400 }
+          );
+        }
+
+        if (dish.isAvailable === false) {
+          throw Object.assign(
+            new Error(`${dish.name} is currently unavailable.`),
+            { statusCode: 400 }
+          );
+        }
+
+        const quantity = Number(item.quantity);
+
+        if (!Number.isSafeInteger(quantity) || quantity < 1) {
+          throw Object.assign(
+            new Error("Each item must have a valid positive quantity."),
+            { statusCode: 400 }
+          );
+        }
+
+        // Always use the menu's current name and price from MongoDB.
+        normalizedItems.push({
+          name: dish.name,
+          quantity,
+          price: dish.price,
+        });
+      }
+
+      const subtotal =
+        Math.round(
+          normalizedItems.reduce(
+            (sum, item) => sum + item.price * item.quantity,
+            0
+          ) * 100
+        ) / 100;
+
+      return {
+        restaurant,
+        items: normalizedItems,
+        subtotal,
+        deliveryCharge: subtotal > 0 ? 40 : 0,
+      };
+    });
+
+    const combinedSubtotal = normalizedGroups.reduce(
+      (sum, group) => sum + group.subtotal,
+      0
+    );
+
+    const couponResult = calculateCouponDiscount(
+      normalizedCoupon,
+      combinedSubtotal
+    );
+
+    if (!couponResult.valid) {
+      return res.status(400).json({
+        success: false,
+        message: couponResult.message,
+      });
+    }
+
+    checkoutId = randomUUID();
+
+    let remainingDiscount = couponResult.discount;
+
+    const orderDocuments = normalizedGroups.map((group) => {
+      const discountAmount = Math.min(
+        remainingDiscount,
+        group.subtotal
+      );
+
+      remainingDiscount =
+        Math.round((remainingDiscount - discountAmount) * 100) / 100;
+
+      const totalAmount = Math.max(
+        0,
+        Math.round(
+          (group.subtotal + group.deliveryCharge - discountAmount) * 100
+        ) / 100
+      );
+
+      return {
+        checkoutId,
+        customer: req.user._id,
+        restaurant: group.restaurant._id,
+        items: group.items,
+        deliveryAddress: {
+          street: deliveryAddress.street.trim(),
+          city: deliveryAddress.city.trim(),
+          state: deliveryAddress.state.trim(),
+          postalCode: deliveryAddress.postalCode.trim(),
+        },
+        phone: phone.trim(),
+        subtotal: group.subtotal,
+        deliveryCharge: group.deliveryCharge,
+        totalAmount,
+        couponCode: normalizedCoupon,
+        discountAmount,
+        paymentMethod,
+        paymentStatus: "PENDING",
+        orderStatus: "PLACED",
+      };
+    });
+
+    console.log("[ORDER] Saving orders", {
+      checkoutId,
+      count: orderDocuments.length,
+      restaurantIds: orderDocuments.map((order) =>
+        order.restaurant.toString()
+      ),
+    });
+
+    // Insert all restaurant orders.
+    createdOrders = await Order.insertMany(orderDocuments, {
+      ordered: true,
+    });
+
+    console.log("[ORDER] MongoDB save successful", {
+      checkoutId,
+      orderIds: createdOrders.map((order) => order._id.toString()),
+    });
+
+    // Notify restaurants immediately only for COD orders.
+    // ONLINE orders must wait until payment is verified.
+    const io = req.app.get("io");
+
+    if (io && paymentMethod === "COD") {
+      for (const order of createdOrders) {
+        io.to(`restaurant:${order.restaurant.toString()}`).emit(
+          "new-order",
+          { orderId: order._id.toString() }
+        );
+
+        io.to(`customer:${req.user._id.toString()}`).emit(
+          "order-updated",
+          {
+            orderId: order._id.toString(),
+            orderStatus: order.orderStatus,
+          }
+        );
+      }
+
+      io.to("admins").emit("order-updated", {
+        checkoutId,
+        orderStatus: "PLACED",
+      });
+    }
+
+    return res.status(201).json({
+      success: true,
+      message:
+        paymentMethod === "COD"
+          ? "Cash on Delivery checkout created successfully."
+          : "Pending online checkout created. Complete payment to confirm.",
+      checkoutId,
+      orders: createdOrders,
+      order: createdOrders[0],
+    });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    console.error("[ORDER] Creation failed:", {
+      name: error.name,
+      message: error.message,
+      statusCode: error.statusCode,
+      stack: error.stack,
+    });
+
+    if (checkoutId && createdOrders.length === 0) {
+      try {
+        await Order.deleteMany({ checkoutId });
+      } catch (cleanupError) {
+        console.error("[ORDER] Cleanup failed:", cleanupError.message);
+      }
+    }
+
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message:
+        error.statusCode ||
+        error.name === "ValidationError" ||
+        error.name === "CastError"
+          ? error.message
+          : "Failed to create order. Check the backend terminal for [ORDER] Creation failed.",
+    });
   }
 });
 
-// GET /api/orders - Fetch clean history matching ONLY the authenticated user (sorted newest first)
-router.get('/', protect, async (req, res) => {
+// GET /api/orders — Orders belonging to the authenticated customer.
+router.get("/", protect, async (req, res) => {
   try {
-    const orders = await Order.find({ customerId: req.user._id }).sort({ createdAt: -1 });
-    return res.status(200).json({ success: true, data: orders });
+    const orders = await Order.find({
+      customer: req.user._id,
+    })
+      .populate("restaurant", "name")
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      count: orders.length,
+      orders,
+      data: orders,
+    });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    console.error("[ORDER] Retrieval failed:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to retrieve orders.",
+    });
   }
 });
 
-// GET /api/orders/:id - Fetch an isolated order single card match
-router.get("/:id", protect, getOrderById);
+// GET /api/orders/:id — A customer can only access their own order.
+router.get("/:id", protect, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!validId(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid order ID.",
+      });
+    }
+
+    const order = await Order.findOne({
+      _id: id,
+      customer: req.user._id,
+    }).populate("restaurant", "name");
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      order,
+    });
+  } catch (error) {
+    console.error("[ORDER] Single-order retrieval failed:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to retrieve order.",
+    });
+  }
+});
 
 export default router;

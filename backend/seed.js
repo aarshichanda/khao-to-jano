@@ -2,7 +2,6 @@
 import "dotenv/config";
 import mongoose from "mongoose";
 import connectDB from "./config/db.js";
-import User from "./models/user.model.js";
 import Restaurant from "./models/restaurant.model.js";
 import Coupon from "./models/coupon.model.js";
 
@@ -12,7 +11,7 @@ const areas = [
   { name: "Behala Chowrasta", zip: "700034" },
   { name: "New Town Action Area 1", zip: "700156" },
   { name: "Gariahat Crossing", zip: "700019" },
-  { name: "Bidhannagar", zip: "700067" }
+  { name: "Bidhannagar", zip: "700067" },
 ];
 
 const restaurantNames = [
@@ -45,7 +44,42 @@ const restaurantNames = [
   "Wow Momo Hub",
   "The Dessert Parlour",
   "Healthy Keto Kitchen",
-  "Street Food Express"
+  "Street Food Express",
+];
+
+// Restaurant username configuration.
+// Account creation and authentication will be implemented separately.
+const restaurantAccounts = [
+  { restaurantName: "The Royal Biryani House", username: "royalbiryani" },
+  { restaurantName: "Kolkata Spice Kitchen", username: "kolkataspice" },
+  { restaurantName: "The Healthy Green Bowl", username: "healthygreenbowl" },
+  { restaurantName: "Munchies Fast Food Corner", username: "munchies" },
+  { restaurantName: "Sweet Bengal Desserts", username: "sweetbengal" },
+  { restaurantName: "Flavors of North India", username: "flavorsofnorthindia" },
+  { restaurantName: "Chinatown Express", username: "chinatownexpress" },
+  { restaurantName: "The South Indian Tiffin Room", username: "southindiantiffin" },
+  { restaurantName: "Continental Bistro", username: "continentalbistro" },
+  { restaurantName: "Tandoori Junction", username: "tandoorijunction" },
+  { restaurantName: "Bhojohori Ranna", username: "bhojohoriranna" },
+  { restaurantName: "The Daily Salad Co.", username: "dailysalad" },
+  { restaurantName: "Wok & Roll", username: "wokandroll" },
+  { restaurantName: "Idli Street", username: "idlistreet" },
+  { restaurantName: "The Kebab Factory", username: "kebabfactory" },
+  { restaurantName: "Cafe Coffee Lounge", username: "cafecoffeelounge" },
+  { restaurantName: "Aminia Express", username: "aminiaexpress" },
+  { restaurantName: "Arsalan Delights", username: "arsalandelights" },
+  { restaurantName: "Peter Cat Replica", username: "petercatreplica" },
+  { restaurantName: "Mocambo Vibes", username: "mocambovibes" },
+  { restaurantName: "Kusum Rolls", username: "kusumrolls" },
+  { restaurantName: "The Burger Club", username: "theburgerclub" },
+  { restaurantName: "Pizza Fusion", username: "pizzafusion" },
+  { restaurantName: "Dawat-e-Khas", username: "dawateekhas" },
+  { restaurantName: "6 Ballygunge Place Mini", username: "ballygunge6mini" },
+  { restaurantName: "Oudh Aromas", username: "oudharomas" },
+  { restaurantName: "Wow Momo Hub", username: "wowmomohub" },
+  { restaurantName: "The Dessert Parlour", username: "dessertparlour" },
+  { restaurantName: "Healthy Keto Kitchen", username: "healthyketokitchen" },
+  { restaurantName: "Street Food Express", username: "streetfoodexpress" },
 ];
 
 const cuisinesList = [
@@ -78,10 +112,10 @@ const cuisinesList = [
   ["Fast Food", "Momos"],
   ["Desserts", "Bakery"],
   ["Healthy", "Keto"],
-  ["Street Food", "Indian"]
+  ["Street Food", "Indian"],
 ];
 
-// Five menu items for each restaurant, in the same order as restaurantNames.
+// Five menu items per restaurant.
 // Each item is [dish name, price in INR].
 const menuItems = [
   [["Kolkata Chicken Biryani",249],["Kolkata Mutton Biryani",329],["Egg Chicken Roll",149],["Chicken Chaap",279],["Firni",99]],
@@ -113,7 +147,7 @@ const menuItems = [
   [["Steamed Chicken Momos",129],["Pan Fried Veg Momos",119],["Chicken Cheese Momos",159],["Chilli Garlic Momos",149],["Hot Garlic Sauce",29]],
   [["Chocolate Truffle Cake",179],["Red Velvet Pastry",139],["Blueberry Cheesecake",189],["Chocolate Chip Cookies",79],["Brownie Sundae",169]],
   [["Keto Paneer Bowl",249],["Cauliflower Fried Rice",199],["Grilled Chicken and Vegetables",279],["Avocado Egg Salad",229],["Almond Flour Brownie",149]],
-  [["Puchka Platter",79],["Papri Chaat",99],["Ghugni Chaat",89],["Chicken Mughlai Paratha",189],["Jhalmuri",59]]
+  [["Puchka Platter",79],["Papri Chaat",99],["Ghugni Chaat",89],["Chicken Mughlai Paratha",189],["Jhalmuri",59]],
 ];
 
 const foodImages = [
@@ -124,39 +158,55 @@ const foodImages = [
   "https://images.unsplash.com/photo-1574071318508-1cdbab80d002?auto=format&fit=crop&w=800&q=80",
   "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&w=800&q=80",
   "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=800&q=80",
-  "https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?auto=format&fit=crop&w=800&q=80"
+  "https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?auto=format&fit=crop&w=800&q=80",
 ];
 
-// Validate data before connecting to or modifying the database.
+// Validate seed data before connecting to or modifying the database.
+const usernames = restaurantAccounts.map((account) => account.username);
+
 if (
   restaurantNames.length !== 30 ||
   cuisinesList.length !== restaurantNames.length ||
   menuItems.length !== restaurantNames.length ||
   menuItems.some((menu) => menu.length !== 5) ||
-  foodImages.length === 0
+  foodImages.length === 0 ||
+  restaurantAccounts.length !== restaurantNames.length ||
+  new Set(usernames).size !== usernames.length ||
+  restaurantAccounts.some(
+    (account, index) =>
+      account.restaurantName !== restaurantNames[index] ||
+      !/^[a-z0-9]+$/.test(account.username)
+  )
 ) {
-  throw new Error("Seed data check failed. Check restaurant, cuisine, menu, and image arrays.");
+  throw new Error(
+    "Seed data validation failed. Check restaurant names, usernames, cuisines, menus, and images."
+  );
 }
 
 const generatedRestaurants = restaurantNames.map((name, i) => {
   const chosenArea = areas[i % areas.length];
+
   const menu = menuItems[i].map(([dishName, price]) => ({
     name: dishName,
     description: `Freshly prepared ${dishName.toLowerCase()}.`,
     price,
-    isAvailable: true
+    isAvailable: true,
   }));
+
+  // Deterministic values keep seed results consistent across runs.
+  const rating = Number((3.8 + (i % 12) * 0.1).toFixed(1));
+  const deliveryStart = 20 + (i % 6) * 5;
+  const deliveryEnd = deliveryStart + 10;
 
   return {
     name,
     address: `${chosenArea.name}, Kolkata, West Bengal`,
-    pincode: chosenArea.zip,
     image: foodImages[i % foodImages.length],
     cuisine: cuisinesList[i],
-    rating: Number((3.8 + Math.random() * 1.1).toFixed(1)),
-    deliveryTime: `${15 + Math.floor(Math.random() * 20)}–${25 + Math.floor(Math.random() * 25)} min`,
+    rating,
+    deliveryTime: `${deliveryStart}-${deliveryEnd} min`,
     menu,
-    isActive: true
+    isActive: true,
   };
 });
 
@@ -164,38 +214,38 @@ const seed = async () => {
   try {
     await connectDB();
 
-    let user = await User.findOne({ email: "ktj.test@example.com" });
-    if (!user) {
-      await User.create({
-        username: "KTJ Test Customer",
-        email: "ktj.test@example.com",
-        password: "TEST_ONLY_NOT_FOR_LOGIN"
-      });
-    }
-
-    // Remove only the old demo records.
-    await Restaurant.deleteMany({
-      name: {
-        $in: [
-          "Biryani House",
-          "Kolkata Kitchen",
-          "The Green Bowl",
-          "KTJ Test Restaurant"
-        ]
-      }
-    });
-
     console.log("Seeding 30 restaurants...");
 
+    let createdCount = 0;
+    let updatedCount = 0;
+
     for (const restaurantData of generatedRestaurants) {
-      await Restaurant.findOneAndUpdate(
-        { name: restaurantData.name },
-        { $set: restaurantData },
-        { upsert: true, runValidators: true, new: true }
-      );
+      const existingRestaurant = await Restaurant.findOne({
+        name: restaurantData.name,
+      });
+
+      if (existingRestaurant) {
+        // Only update fields explicitly listed here.
+        // The existing owner mapping and restaurant ID remain unchanged.
+        const { owner, ...restaurantFields } = restaurantData;
+
+        await Restaurant.updateOne(
+          { _id: existingRestaurant._id },
+          { $set: restaurantFields },
+          { runValidators: true }
+        );
+
+        updatedCount++;
+      } else {
+        // New restaurants use the schema's default owner value.
+        await Restaurant.create(restaurantData);
+        createdCount++;
+      }
     }
 
-    console.log(`Successfully seeded ${generatedRestaurants.length} restaurants.`);
+    console.log(
+      `Restaurant seeding complete. Created: ${createdCount}; updated: ${updatedCount}.`
+    );
 
     const testCoupon = await Coupon.findOneAndUpdate(
       { code: "FIRST50" },
@@ -207,19 +257,27 @@ const seed = async () => {
           minOrderAmount: 100,
           maxDiscountAmount: 50,
           expiryDate: new Date("2027-12-31"),
-          isActive: true
-        }
+          isActive: true,
+        },
       },
-      { upsert: true, new: true }
+      {
+        upsert: true,
+        returnDocument: "after",
+        runValidators: true,
+      }
     );
 
     console.log(`Coupon verified: ${testCoupon.code}`);
+    console.log("Restaurant username configuration validated.");
+    console.log("No owner accounts or passwords were created or modified.");
     console.log("Seeding completed successfully.");
   } catch (error) {
-    console.error("Seeding failed:", error.message);
+    console.error("Seeding failed:", error);
     process.exitCode = 1;
   } finally {
-    await mongoose.disconnect();
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect();
+    }
   }
 };
 

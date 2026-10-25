@@ -36,11 +36,28 @@ const orderSchema = new mongoose.Schema(
       postalCode: { type: String, required: true },
     },
 
+    phone: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
     subtotal: { type: Number, required: true, min: 0 },
     deliveryCharge: { type: Number, required: true, min: 0 },
     totalAmount: { type: Number, required: true, min: 0 },
-    couponCode: { type: String, uppercase: true, trim: true, default: "" },
-    discountAmount: { type: Number, default: 0, min: 0 },
+
+    couponCode: {
+      type: String,
+      uppercase: true,
+      trim: true,
+      default: "",
+    },
+
+    discountAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
 
     paymentMethod: {
       type: String,
@@ -49,15 +66,22 @@ const orderSchema = new mongoose.Schema(
     },
 
     paymentStatus: {
-      type: String,
-      enum: ["PENDING", "PAID", "FAILED", "REFUNDED"],
-      default: "PENDING",
+    type: String,
+    enum: ["PENDING", "PAID", "FAILED", "REFUNDED"],
+    default: "PENDING",
     },
+
+    paymentTransactionId: {
+    type: String,
+  default: null,
+  index: true,
+},
 
     orderStatus: {
       type: String,
       enum: [
         "PLACED",
+        "RESTAURANT_ACCEPTED",
         "CONFIRMED",
         "PREPARING",
         "READY",

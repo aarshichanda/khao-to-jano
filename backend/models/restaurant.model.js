@@ -33,6 +33,12 @@ const restaurantSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    owner: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true,
+    },
     address: {
       type: String,
       required: true,

@@ -1,7 +1,8 @@
-
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import { io } from "socket.io-client";
+import API_BASE_URL, { API_URL } from "../api";
 
 function MyOrders() {
   const [orders, setOrders] = useState([]);
@@ -9,33 +10,102 @@ function MyOrders() {
   const [error, setError] = useState("");
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const fetchOrders = async () => {
-      try {
-        setLoading(true);
-        setError("");
+  const fetchOrders = async ({ showLoading = true } = {}) => {
+    try {
+      if (showLoading) setLoading(true);
+      setError("");
 
-        const response = await axios.get("http://localhost:5000/api/orders");
-        setOrders(response.data.orders || []);
-      } catch (err) {
-        console.error("Failed to fetch orders:", err);
+      const token = localStorage.getItem("token");
+
+      if (!token) {
+        setError("Please log in to view your orders.");
+        return;
+      }
+
+      const response = await axios.get(API_URL + "/orders", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const payload = response.data;
+
+      const fetchedOrders = Array.isArray(payload)
+        ? payload
+        : Array.isArray(payload?.orders)
+          ? payload.orders
+          : Array.isArray(payload?.data)
+            ? payload.data
+            : Array.isArray(payload?.data?.orders)
+              ? payload.data.orders
+              : Array.isArray(payload?.results)
+                ? payload.results
+                : null;
+
+      if (!fetchedOrders) {
+        throw new Error(
+          "Unexpected orders API response. Check the backend response format."
+        );
+      }
+
+      setOrders(fetchedOrders);
+    } catch (err) {
+      console.error("Failed to fetch orders:", err);
+
+      if (err.response?.status === 401) {
+        setError(
+          "Your session is invalid or has expired. Please log in again."
+        );
+      } else {
         setError(
           err.response?.data?.message ||
+            err.message ||
             "Unable to load orders. Please try again."
         );
-      } finally {
-        setLoading(false);
       }
+    } finally {
+      if (showLoading) setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchOrders();
+
+    const token = localStorage.getItem("token");
+
+    if (!token) return undefined;
+
+    const socket = io(API_BASE_URL, {
+      auth: { token },
+      transports: ["websocket", "polling"],
+    });
+
+    const handleOrderUpdated = (updatedOrder) => {
+      console.log("Order status update received:", updatedOrder);
+      fetchOrders({ showLoading: false });
     };
 
-    fetchOrders();
+    const handleConnectError = (socketError) => {
+      console.error(
+        "Order tracking socket error:",
+        socketError.message
+      );
+    };
+
+    socket.on("order-updated", handleOrderUpdated);
+    socket.on("connect_error", handleConnectError);
+
+    return () => {
+      socket.off("order-updated", handleOrderUpdated);
+      socket.off("connect_error", handleConnectError);
+      socket.disconnect();
+    };
   }, []);
 
   const checkoutGroups = useMemo(() => {
     const groups = new Map();
 
     orders.forEach((order) => {
-      // Older orders without checkoutId remain separate.
       const groupKey = order.checkoutId || `single-${order._id}`;
 
       if (!groups.has(groupKey)) {
@@ -49,14 +119,15 @@ function MyOrders() {
     });
 
     return Array.from(groups.values()).sort((a, b) => {
-      const dateA = new Date(
-        Math.max(
-          ...a.orders.map((order) => new Date(order.createdAt || 0).getTime())
+      const dateA = Math.max(
+        ...a.orders.map((order) =>
+          new Date(order.createdAt || 0).getTime()
         )
       );
-      const dateB = new Date(
-        Math.max(
-          ...b.orders.map((order) => new Date(order.createdAt || 0).getTime())
+
+      const dateB = Math.max(
+        ...b.orders.map((order) =>
+          new Date(order.createdAt || 0).getTime()
         )
       );
 
@@ -67,10 +138,41 @@ function MyOrders() {
   const formatCurrency = (amount) =>
     `₹${Number(amount || 0).toFixed(2)}`;
 
+  const formatStatus = (order) =>
+    String(order?.orderStatus || order?.status || "PLACED")
+      .replaceAll("_", " ")
+      .toUpperCase();
+
+  const getStatusMessage = (order) => {
+    const status = String(
+      order?.orderStatus || order?.status || "PLACED"
+    ).toUpperCase();
+
+    const messages = {
+      PLACED: "Waiting for the restaurant to accept this order.",
+      RESTAURANT_ACCEPTED:
+        "Restaurant accepted. Waiting for KTJ Admin approval.",
+      CONFIRMED: "KTJ Admin approved this order.",
+      PREPARING: "The restaurant is preparing your order.",
+      READY: "Your order is ready.",
+      OUT_FOR_DELIVERY: "Your order is out for delivery.",
+      DELIVERED: "Your order has been delivered.",
+      CANCELLED: "This order has been cancelled.",
+    };
+
+    return messages[status] || "Your order status will update here.";
+  };
+
   const formatDate = (date) => {
     if (!date) return "Date unavailable";
 
-    return new Date(date).toLocaleString("en-IN", {
+    const parsedDate = new Date(date);
+
+    if (Number.isNaN(parsedDate.getTime())) {
+      return "Date unavailable";
+    }
+
+    return parsedDate.toLocaleString("en-IN", {
       dateStyle: "medium",
       timeStyle: "short",
     });
@@ -96,19 +198,33 @@ function MyOrders() {
 
   if (error) {
     return (
-      <div style={styles.page}>
-        <h2>My Orders</h2>
+      <main style={styles.page}>
+        <h1 style={styles.heading}>My Orders</h1>
         <p style={styles.error}>{error}</p>
-        <button style={styles.button} onClick={() => window.location.reload()}>
-          Try Again
-        </button>
-      </div>
+
+        {error.includes("log in") || error.includes("session") ? (
+          <button
+            style={styles.button}
+            onClick={() => navigate("/login")}
+          >
+            Go to Login
+          </button>
+        ) : (
+          <button
+            style={styles.button}
+            onClick={() => fetchOrders()}
+          >
+            Try Again
+          </button>
+        )}
+      </main>
     );
   }
 
   return (
     <main style={styles.page}>
       <h1 style={styles.heading}>My Orders</h1>
+
       <p style={styles.subtitle}>
         View your checkouts and the orders placed with each restaurant.
       </p>
@@ -117,38 +233,64 @@ function MyOrders() {
         <section style={styles.empty}>
           <h2>No orders yet</h2>
           <p>Your placed orders will appear here.</p>
+
           <button
             style={styles.button}
-            onClick={() => navigate("/")}
+            onClick={() => navigate("/restaurants")}
           >
-            Explore Food
+            Explore Restaurants
           </button>
         </section>
       ) : (
         <div style={styles.list}>
           {checkoutGroups.map((group) => {
             const firstOrder = group.orders[0];
+
             const checkoutSubtotal = group.orders.reduce(
-              (sum, order) => sum + Number(order.subtotal || 0),
-              0
-            );
-            const totalDelivery = group.orders.reduce(
-              (sum, order) => sum + Number(order.deliveryCharge || 0),
-              0
-            );
-            const checkoutTotal = group.orders.reduce(
-              (sum, order) => sum + Number(order.totalAmount || 0),
+              (sum, order) =>
+                sum + Number(order.subtotal || 0),
               0
             );
 
+            const totalDelivery = group.orders.reduce(
+              (sum, order) =>
+                sum + Number(order.deliveryCharge || 0),
+              0
+            );
+
+            const checkoutDiscount = group.orders.reduce(
+              (sum, order) =>
+                sum + Number(order.discountAmount || 0),
+              0
+            );
+
+            const checkoutTotal = group.orders.reduce(
+              (sum, order) =>
+                sum + Number(order.totalAmount || 0),
+              0
+            );
+
+            const couponCodes = [
+              ...new Set(
+                group.orders
+                  .map((order) => order.couponCode?.trim())
+                  .filter(Boolean)
+              ),
+            ];
+
             return (
-              <section key={group.checkoutId || firstOrder._id} style={styles.card}>
+              <section
+                key={group.checkoutId || firstOrder._id}
+                style={styles.card}
+              >
                 <div style={styles.cardHeader}>
                   <div>
                     <h2 style={styles.checkoutTitle}>Checkout</h2>
+
                     <p style={styles.muted}>
                       {formatDate(firstOrder.createdAt)}
                     </p>
+
                     <p style={styles.reference}>
                       Reference: {group.checkoutId || firstOrder._id}
                     </p>
@@ -156,24 +298,33 @@ function MyOrders() {
 
                   <span style={styles.badge}>
                     {group.orders.length}{" "}
-                    {group.orders.length === 1 ? "order" : "restaurant orders"}
+                    {group.orders.length === 1
+                      ? "order"
+                      : "restaurant orders"}
                   </span>
                 </div>
 
                 <div style={styles.restaurantList}>
                   {group.orders.map((order, index) => (
-                    <div key={order._id} style={styles.restaurantOrder}>
+                    <div
+                      key={order._id}
+                      style={styles.restaurantOrder}
+                    >
                       <h3 style={styles.restaurantTitle}>
-                        Restaurant {index + 1}
+                        {order.restaurant?.name ||
+                          `Restaurant ${index + 1}`}
                       </h3>
 
                       <p style={styles.muted}>
                         Order ID: {order._id}
                       </p>
 
-                      <p>
-                        Status:{" "}
-                        <strong>{String(order.orderStatus || "PLACED").replaceAll("_", " ")}</strong>
+                      <p style={styles.statusLine}>
+                        Status: <strong>{formatStatus(order)}</strong>
+                      </p>
+
+                      <p style={styles.statusMessage}>
+                        {getStatusMessage(order)}
                       </p>
 
                       <ul style={styles.items}>
@@ -181,7 +332,8 @@ function MyOrders() {
                           <li key={`${order._id}-${itemIndex}`}>
                             {item.name} × {item.quantity} —{" "}
                             {formatCurrency(
-                              Number(item.price) * Number(item.quantity)
+                              Number(item.price) *
+                                Number(item.quantity)
                             )}
                           </li>
                         ))}
@@ -189,23 +341,51 @@ function MyOrders() {
 
                       <div style={styles.amountRow}>
                         <span>Restaurant subtotal</span>
-                        <strong>{formatCurrency(order.subtotal)}</strong>
+                        <strong>
+                          {formatCurrency(order.subtotal)}
+                        </strong>
                       </div>
 
                       <div style={styles.amountRow}>
                         <span>Delivery charge</span>
-                        <strong>{formatCurrency(order.deliveryCharge)}</strong>
+                        <strong>
+                          {formatCurrency(order.deliveryCharge)}
+                        </strong>
                       </div>
+
+                      {Number(order.discountAmount || 0) > 0 && (
+                        <>
+                          <div style={styles.couponRow}>
+                            <span>Coupon applied</span>
+                            <strong>
+                              {order.couponCode || "Discount"}
+                            </strong>
+                          </div>
+
+                          <div style={styles.discountRow}>
+                            <span>Discount</span>
+                            <strong>
+                              -{formatCurrency(order.discountAmount)}
+                            </strong>
+                          </div>
+                        </>
+                      )}
 
                       <div style={styles.amountRow}>
                         <span>Restaurant order total</span>
-                        <strong>{formatCurrency(order.totalAmount)}</strong>
+                        <strong>
+                          {formatCurrency(order.totalAmount)}
+                        </strong>
                       </div>
                     </div>
                   ))}
                 </div>
 
                 <div style={styles.summary}>
+                  <h3 style={styles.summaryHeading}>
+                    Checkout Summary
+                  </h3>
+
                   <div style={styles.amountRow}>
                     <span>Combined food subtotal</span>
                     <span>{formatCurrency(checkoutSubtotal)}</span>
@@ -215,6 +395,26 @@ function MyOrders() {
                     <span>Combined delivery charges</span>
                     <span>{formatCurrency(totalDelivery)}</span>
                   </div>
+
+                  {checkoutDiscount > 0 && (
+                    <>
+                      <div style={styles.couponRow}>
+                        <span>Coupon code</span>
+                        <strong>
+                          {couponCodes.length > 0
+                            ? couponCodes.join(", ")
+                            : "Applied discount"}
+                        </strong>
+                      </div>
+
+                      <div style={styles.discountRow}>
+                        <span>Total discount</span>
+                        <strong>
+                          -{formatCurrency(checkoutDiscount)}
+                        </strong>
+                      </div>
+                    </>
+                  )}
 
                   <div style={styles.totalRow}>
                     <span>Checkout total</span>
@@ -310,14 +510,42 @@ const styles = {
     paddingLeft: "20px",
     lineHeight: 1.8,
   },
+  statusLine: {
+    marginBottom: "6px",
+  },
+  statusMessage: {
+    marginTop: 0,
+    color: "#6b625c",
+    fontSize: "14px",
+  },
   amountRow: {
     display: "flex",
     justifyContent: "space-between",
     gap: "16px",
     margin: "9px 0",
   },
+  couponRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: "16px",
+    margin: "9px 0",
+    color: "#276738",
+  },
+  discountRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "16px",
+    margin: "9px 0",
+    color: "green",
+    fontWeight: 600,
+  },
   summary: {
     paddingTop: "18px",
+  },
+  summaryHeading: {
+    marginTop: 0,
+    marginBottom: "16px",
   },
   totalRow: {
     display: "flex",

@@ -1,8 +1,10 @@
+
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
+import API_BASE_URL from "../api";
 
 function Login() {
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -14,54 +16,130 @@ function Login() {
     setLoading(true);
 
     try {
-      // FIXED: Switch to absolute localhost mapping to prevent internal OS container routing shifts
-      const res = await fetch("http://localhost:5000/api/auth/login", {
+     const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({
+          identifier: identifier.trim(),
+          password,
+        }),
       });
+
       const result = await res.json();
 
-      if (res.ok && result.success) {
-        localStorage.setItem("token", result.token);
-        localStorage.setItem("userRole", result.user.role);
-        
-        alert(`Welcome back, ${result.user.name}!`);
-        
-        if (result.user.role === "restaurant_owner") {
-          navigate("/owner/dashboard");
-        } else {
-          navigate("/restaurants");
-        }
+      if (!res.ok || !result.success) {
+        setError(
+          result.message || "Invalid login details. Please try again."
+        );
+        return;
+      }
+
+      const user = result.user;
+      const roles = Array.isArray(user.roles)
+        ? [...new Set([...user.roles, user.role].filter(Boolean))]
+        : [user.role].filter(Boolean);
+
+      localStorage.setItem("token", result.token);
+      localStorage.setItem("userRole", user.role);
+      localStorage.setItem("userRoles", JSON.stringify(roles));
+      localStorage.setItem("userName", user.name || user.username || "");
+      localStorage.setItem("userEmail", user.email || "");
+
+      if (roles.includes("admin")) {
+        navigate("/admin/dashboard");
+      } else if (
+        roles.includes("customer") &&
+        roles.includes("restaurant_owner")
+      ) {
+        const choice = window.confirm(
+          "Login successful. Choose OK for the restaurant-owner dashboard, or Cancel for the customer dashboard."
+        );
+
+        navigate(
+          choice ? "/owner/dashboard" : "/customer/dashboard"
+        );
+      } else if (roles.includes("restaurant_owner")) {
+        navigate("/owner/dashboard");
       } else {
-        setError(result.message || "Invalid login credentials.");
+        navigate("/customer/dashboard");
       }
     } catch (err) {
-      console.error(err);
-      setError("Failed to connect directly to the authentication backend. Ensure backend is running on port 5000.");
+      console.error("Login error:", err);
+      setError(
+        "Could not connect to the server. Please ensure the backend is running."
+      );
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <main style={{ padding: "40px", fontFamily: "sans-serif", maxWidth: "400px", margin: "50px auto", backgroundColor: "#fff", borderRadius: "8px", boxShadow: "0 2px 10px rgba(0,0,0,0.05)" }}>
-      <h2 style={{ textAlign: "center", color: "#333", marginBottom: "20px" }}>Account Login</h2>
-      {error && <p style={{ padding: "10px", backgroundColor: "#ffebee", color: "red", borderRadius: "4px", fontSize: "13px", fontWeight: "bold" }}>{error}</p>}
-      
-      <form onSubmit={handleLoginSubmit} style={{ display: "flex", flexDirection: "column", gap: "15px" }}>
-        <div>
-          <label style={{ display: "block", fontSize: "14px", fontWeight: "bold", marginBottom: "5px", color: "#555" }}>Email Address</label>
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} style={{ width: "100%", padding: "12px", border: "1px solid #ccc", borderRadius: "4px" }} placeholder="Enter your email" required />
-        </div>
-        <div>
-          <label style={{ display: "block", fontSize: "14px", fontWeight: "bold", marginBottom: "5px", color: "#555" }}>Password</label>
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} style={{ width: "100%", padding: "12px", border: "1px solid #ccc", borderRadius: "4px" }} placeholder="Enter password" required />
-        </div>
-        <button type="submit" disabled={loading} style={{ width: "100%", padding: "14px", backgroundColor: loading ? "#aaa" : "#8B2222", color: "#fff", border: "none", borderRadius: "4px", fontSize: "16px", fontWeight: "bold", cursor: "pointer" }}>
-          {loading ? "Verifying..." : "Login to Khao to Jano"}
-        </button>
-      </form>
+    <main className="ktj-login-page">
+      <section className="ktj-login-card">
+        <p className="ktj-login-brand">KHAO TO JANO</p>
+        <h1>Welcome Back</h1>
+        <p className="ktj-login-subtitle">
+          Sign in to continue to your account.
+        </p>
+
+        {error && (
+          <p className="ktj-login-error" role="alert">
+            {error}
+          </p>
+        )}
+
+        <form onSubmit={handleLoginSubmit} className="ktj-login-form">
+          <div className="ktj-login-field">
+            <label htmlFor="login-identifier">
+              Email Address, Username, or Phone Number
+            </label>
+            <input
+              id="login-identifier"
+              type="text"
+              autoComplete="username"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
+              placeholder="Enter email, username, or phone"
+              required
+            />
+          </div>
+
+          <div className="ktj-login-field">
+            <div className="ktj-password-label-row">
+              <label htmlFor="login-password">Password</label>
+              <Link to="/forgot-password" className="ktj-forgot-link">
+                Forgot Password?
+              </Link>
+            </div>
+            <input
+              id="login-password"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Enter your password"
+              required
+            />
+          </div>
+
+          <button
+            type="submit"
+            className="ktj-login-button"
+            disabled={loading}
+          >
+            {loading ? "Verifying..." : "Login to Khao to Jano"}
+          </button>
+        </form>
+
+        <p className="ktj-login-register">
+          New to Khao To Jano?{" "}
+          <Link to="/register">Create an account</Link>
+        </p>
+
+        <Link to="/" className="ktj-login-home">
+          Back to Home
+        </Link>
+      </section>
     </main>
   );
 }
