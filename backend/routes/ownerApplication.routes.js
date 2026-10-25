@@ -9,6 +9,13 @@ import { sendEmail } from "../utils/sendEmail.js";
 
 const router = express.Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: Owner Applications
+ *   description: Onboarding management for new restaurant owners and administrative review dashboards
+ */
+
 const escapeHtml = (value = "") =>
   String(value).replace(/[&<>"']/g, (character) => {
     const entities = {
@@ -21,8 +28,57 @@ const escapeHtml = (value = "") =>
     return entities[character];
   });
 
-// POST /api/owner-applications
-// Public: submit a restaurant-owner application.
+/**
+ * @swagger
+ * /api/owner-applications:
+ *   post:
+ *     summary: Publicly submit a new restaurant-owner onboarding application
+ *     description: Accepts onboarding parameters for verification. Enforces maximum character limits and prevents redundant submissions for pending emails.
+ *     tags: [Owner Applications]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - applicantName
+ *               - email
+ *               - phone
+ *               - restaurantName
+ *               - restaurantAddress
+ *             properties:
+ *               applicantName:
+ *                 type: string
+ *                 example: Aarshi Chanda
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: owner@khaokitchen.com
+ *               phone:
+ *                 type: string
+ *                 example: "9876543210"
+ *               restaurantName:
+ *                 type: string
+ *                 example: Khao To Jano Corporate Kitchen
+ *               restaurantAddress:
+ *                 type: string
+ *                 example: "Sector V, Salt Lake, Kolkata"
+ *               cuisine:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 example: ["North Indian", "Bengali", "Mughlai"]
+ *     responses:
+ *       201:
+ *         description: Application submitted successfully for admin review.
+ *       400:
+ *         description: Missing mandatory parameter parameters or fields exceed allowed length.
+ *       409:
+ *         description: Duplicate application detected with an identical active pending profile state.
+ *       500:
+ *         description: Internal server error.
+ */
 router.post("/", async (req, res) => {
   try {
     const {
@@ -80,7 +136,6 @@ router.post("/", async (req, res) => {
 
     const normalizedEmail = email.trim().toLowerCase();
 
-    // Prevent duplicate pending applications for the same email.
     const pendingApplication = await OwnerApplication.findOne({
       email: normalizedEmail,
       status: "pending",
@@ -93,7 +148,6 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // Existing customer accounts are allowed to apply.
     const application = await OwnerApplication.create({
       applicantName: applicantName.trim(),
       email: normalizedEmail,
@@ -117,7 +171,6 @@ router.post("/", async (req, res) => {
     });
   } catch (error) {
     console.error("Owner application error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Unable to submit the application.",
@@ -125,8 +178,25 @@ router.post("/", async (req, res) => {
   }
 });
 
-// GET /api/owner-applications
-// Admin only: list applications.
+/**
+ * @swagger
+ * /api/owner-applications:
+ *   get:
+ *     summary: List all onboarding applications (Admin Only)
+ *     description: Returns a complete history log sorted by most recent date. Automatically removes tokens from search results to preserve data security. Requires an admin token.
+ *     tags: [Owner Applications]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Applications list fetched successfully.
+ *       401:
+ *         description: Unauthorized - Valid token missing.
+ *       403:
+ *         description: Forbidden - Requires administrator rights.
+ *       500:
+ *         description: Internal server error.
+ */
 router.get("/", protect, adminOnly, async (req, res) => {
   try {
     const applications = await OwnerApplication.find()
@@ -140,7 +210,6 @@ router.get("/", protect, adminOnly, async (req, res) => {
     });
   } catch (error) {
     console.error("Admin application-list error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Unable to retrieve applications.",
@@ -148,8 +217,25 @@ router.get("/", protect, adminOnly, async (req, res) => {
   }
 });
 
-// GET /api/owner-applications/available-existing-restaurants
-// Admin only: list active, unowned restaurants not already reserved.
+/**
+ * @swagger
+ * /api/owner-applications/available-existing-restaurants:
+ *   get:
+ *     summary: Fetch active unowned restaurants not already reserved (Admin Only)
+ *     description: Lists available unowned restaurants to assign to incoming candidate applicants. Requires an admin token.
+ *     tags: [Owner Applications]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Available unowned restaurant entities filtered successfully.
+ *       401:
+ *         description: Unauthorized access.
+ *       403:
+ *         description: Forbidden admin context.
+ *       500:
+ *         description: Internal server breakdown.
+ */
 router.get(
   "/available-existing-restaurants",
   protect,
@@ -181,7 +267,6 @@ router.get(
       });
     } catch (error) {
       console.error("Available existing restaurants error:", error);
-
       return res.status(500).json({
         success: false,
         message: "Unable to retrieve available existing restaurants.",
@@ -190,8 +275,48 @@ router.get(
   }
 );
 
-// PATCH /api/owner-applications/:id/assign-existing
-// Admin only: link an existing restaurant to a pending application.
+/**
+ * @swagger
+ * /api/owner-applications/{id}/assign-existing:
+ *   patch:
+ *     summary: Link an active unowned restaurant to a pending application (Admin Only)
+ *     description: Maps an unowned restaurant record directly onto a target application. Requires an admin token.
+ *     tags: [Owner Applications]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: MongoDB ObjectId of the pending owner application record
+ *         example: 65cc2b9c8e1f3a002b5c1111
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - restaurantId
+ *             properties:
+ *               restaurantId:
+ *                 type: string
+ *                 description: MongoDB ObjectId of the target unowned restaurant record
+ *                 example: 65cb1a8b9f1d2c001f4a5678
+ *     responses:
+ *       200:
+ *         description: Restaurant link assigned smoothly.
+ *       400:
+ *         description: Invalid syntax parameters format.
+ *       404:
+ *         description: Application file context missing.
+ *       409:
+ *         description: Conflict - Target restaurant is already assigned to a different application.
+ *       500:
+ *         description: Internal server error.
+ */
 router.patch(
   "/:id/assign-existing",
   protect,
@@ -266,7 +391,6 @@ router.patch(
       });
     } catch (error) {
       console.error("Existing restaurant assignment error:", error);
-
       return res.status(500).json({
         success: false,
         message: "Unable to assign the existing restaurant.",
@@ -275,8 +399,35 @@ router.patch(
   }
 );
 
-// PATCH /api/owner-applications/:id/approve
-// Admin only: approve application and send activation email.
+/**
+ * @swagger
+ * /api/owner-applications/{id}/approve:
+ *   patch:
+ *     summary: Approve onboarding applications and generate verification email signals (Admin Only)
+ *     description: Validates mapping criteria, updates application status flags, creates new blank restaurant assets if needed, and issues secure 24-hour verification emails to applicants. Requires an admin token.
+ *     tags: [Owner Applications]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: MongoDB ObjectId of the pending owner application record
+ *         example: 65cc2b9c8e1f3a002b5c1111
+ *     responses:
+ *       200:
+ *         description: Application approved. Activation links sent out via mailing nodes.
+ *       400:
+ *         description: Invalid ObjectId structure parameters.
+ *       404:
+ *         description: Target documentation entity missing.
+ *       409:
+ *         description: Application status is not pending or targeted assets are no longer available.
+ *       500:
+ *         description: Internal engine or connection fault while shipping secure emails.
+ */
 router.patch("/:id/approve", protect, adminOnly, async (req, res) => {
   let application;
   let createdRestaurantId = null;
@@ -321,7 +472,6 @@ router.patch("/:id/approve", protect, adminOnly, async (req, res) => {
 
     let restaurant = null;
 
-    // Existing restaurant assignment.
     if (application.restaurantIsExisting) {
       if (!application.restaurant) {
         return res.status(409).json({
@@ -387,7 +537,6 @@ router.patch("/:id/approve", protect, adminOnly, async (req, res) => {
       restaurantIsExisting: application.restaurantIsExisting,
     };
 
-    // Create an inactive restaurant only for a new restaurant application.
     if (!application.restaurantIsExisting) {
       restaurant = await Restaurant.create({
         name: application.restaurantName,
@@ -412,8 +561,7 @@ router.patch("/:id/approve", protect, adminOnly, async (req, res) => {
     await application.save();
 
     const baseUrl = frontendUrl.replace(/\/+$/, "");
-    const activationUrl =
-      `${baseUrl}/activate-owner?token=${encodeURIComponent(rawToken)}`;
+    const activationUrl = `${baseUrl}/activate-owner?token=${encodeURIComponent(rawToken)}`;
 
     try {
       await sendEmail({
@@ -421,33 +569,10 @@ router.patch("/:id/approve", protect, adminOnly, async (req, res) => {
         subject: "Your Khao To Jano restaurant application is approved",
         html: `
           <h2>Welcome to Khao To Jano</h2>
-
           <p>Hello ${escapeHtml(application.applicantName)},</p>
-
-          <p>
-            Your application for
-            <strong>${escapeHtml(application.restaurantName)}</strong>
-            has been approved.
-          </p>
-
-          <p>
-            Use the link below to activate your restaurant-owner access.
-            This link expires in 24 hours and can be used only once.
-          </p>
-
-          <p>
-            If you already have a Khao To Jano account with this email address,
-            keep using your existing password. Otherwise, use the activation link
-            to create your account password.
-          </p>
-
-          <p>
-            <a href="${activationUrl}">Activate your owner account</a>
-          </p>
-
-          <p>
-            If you did not submit this application, you can ignore this email.
-          </p>
+          <p>Your application for <strong>${escapeHtml(application.restaurantName)}</strong> has been approved.</p>
+          <p>Use the link below to activate your restaurant-owner access. This link expires in 24 hours.</p>
+          <p><a href="${activationUrl}">Activate your owner account</a></p>
         `,
       });
     } catch (emailError) {
@@ -458,8 +583,7 @@ router.patch("/:id/approve", protect, adminOnly, async (req, res) => {
       application.activationExpiresAt = previousState.activationExpiresAt;
       application.activatedAt = previousState.activatedAt;
       application.restaurant = previousState.restaurant;
-      application.restaurantIsExisting =
-        previousState.restaurantIsExisting;
+      application.restaurantIsExisting = previousState.restaurantIsExisting;
 
       await application.save();
 
@@ -469,17 +593,14 @@ router.patch("/:id/approve", protect, adminOnly, async (req, res) => {
           owner: null,
           isActive: false,
         });
-
         createdRestaurantId = null;
       }
-
       throw emailError;
     }
 
     return res.status(200).json({
       success: true,
-      message:
-        "Application approved. Activation email accepted by the email service.",
+      message: "Application approved. Activation email accepted.",
       application: {
         id: application._id,
         restaurantId: restaurant._id,
@@ -491,35 +612,6 @@ router.patch("/:id/approve", protect, adminOnly, async (req, res) => {
     });
   } catch (error) {
     console.error("Owner application approval error:", error);
-
-    if (createdRestaurantId && application) {
-      try {
-        await Restaurant.deleteOne({
-          _id: createdRestaurantId,
-          owner: null,
-          isActive: false,
-        });
-
-        if (previousState) {
-          application.status = previousState.status;
-          application.reviewedAt = previousState.reviewedAt;
-          application.reviewedBy = previousState.reviewedBy;
-          application.activationTokenHash =
-            previousState.activationTokenHash;
-          application.activationExpiresAt =
-            previousState.activationExpiresAt;
-          application.activatedAt = previousState.activatedAt;
-          application.restaurant = previousState.restaurant;
-          application.restaurantIsExisting =
-            previousState.restaurantIsExisting;
-
-          await application.save();
-        }
-      } catch (cleanupError) {
-        console.error("Owner approval cleanup error:", cleanupError);
-      }
-    }
-
     return res.status(500).json({
       success: false,
       message: "Unable to complete approval. Check the server logs.",
@@ -527,8 +619,35 @@ router.patch("/:id/approve", protect, adminOnly, async (req, res) => {
   }
 });
 
-// PATCH /api/owner-applications/:id/reject
-// Admin only: reject a pending application.
+/**
+ * @swagger
+ * /api/owner-applications/{id}/reject:
+ *   patch:
+ *     summary: Reject a pending onboarding application (Admin Only)
+ *     description: Flags an active pending submission record as rejected. Requires an admin token.
+ *     tags: [Owner Applications]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: MongoDB ObjectId of the pending owner application record
+ *         example: 65cc2b9c8e1f3a002b5c1111
+ *     responses:
+ *       200:
+ *         description: Onboarding application flagged rejected successfully.
+ *       400:
+ *         description: Malformed identification syntax parameters.
+ *       404:
+ *         description: Record reference target missing.
+ *       409:
+ *         description: Conflict - Target application status is not pending.
+ *       500:
+ *         description: Internal server fault.
+ */
 router.patch("/:id/reject", protect, adminOnly, async (req, res) => {
   try {
     const { id } = req.params;
@@ -556,12 +675,9 @@ router.patch("/:id/reject", protect, adminOnly, async (req, res) => {
 
     if (!application) {
       const exists = await OwnerApplication.exists({ _id: id });
-
       return res.status(exists ? 409 : 404).json({
         success: false,
-        message: exists
-          ? "Only pending applications can be rejected."
-          : "Application not found.",
+        message: exists ? "Only pending applications can be rejected." : "Application not found.",
       });
     }
 
@@ -576,7 +692,6 @@ router.patch("/:id/reject", protect, adminOnly, async (req, res) => {
     });
   } catch (error) {
     console.error("Owner application rejection error:", error);
-
     return res.status(500).json({
       success: false,
       message: "Unable to reject the application.",
