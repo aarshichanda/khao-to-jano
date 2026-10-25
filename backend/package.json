@@ -21,6 +21,8 @@
     "mongoose": "^9.10.1",
     "nodemailer": "^10.1.7",
     "resend": "^6.34.1",
-    "socket.io": "^4.8.4"
+    "socket.io": "^4.8.4",
+    "swagger-jsdoc": "^6.3.0",
+    "swagger-ui-express": "^5.0.1"
   }
 }

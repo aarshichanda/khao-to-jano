@@ -20,6 +20,8 @@ import ownerRoutes from "./routes/owner.routes.js";
 import ownerDashboardRoutes from "./routes/ownerDashboard.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
 import payuRoutes from "./routes/payu.routes.js";
+import swaggerUi from "swagger-ui-express";
+import swaggerSpec from "./config/swagger.js";
 
 const app = express();
 const httpServer = createServer(app);
@@ -40,6 +42,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 const io = new Server(httpServer, {
   cors: corsOptions,
