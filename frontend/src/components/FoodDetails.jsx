@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useDispatch } from "react-redux";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { addToCart } from "../redux/cartSlice"; // FIXED: Points exactly to your true Redux folder path
+import { useNavigate, useParams, useSearchParams, useLocation } from "react-router-dom";
+import { addToCart } from "../redux/cartSlice";
 
 import paneerTikkaImage from "../../images/Food card/Paneer Tikka.webp";
 import chickenBiryaniImage from "../../images/Food card/Chicken Biryani.webp";
@@ -16,16 +16,25 @@ function FoodDetails() {
   const { name = "" } = useParams();
   const dispatch = useDispatch();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
 
-  const restaurantId = searchParams.get("restaurantId");
-  const dishId = searchParams.get("dishId");
+  // Try parsing from clean location state transfer hooks first
+  const stateRestaurantId = location.state?.restaurantId;
+  const stateDishId = location.state?.dishId;
+  const stateDishData = location.state?.dish;
 
+  // Fallback to URL search parameters if direct state is absent
+  const urlRestaurantId = searchParams.get("restaurantId");
+  const urlDishId = searchParams.get("dishId");
+
+  const restaurantId = stateRestaurantId || urlRestaurantId;
+  const dishId = stateDishId || urlDishId;
   const hasRestaurantDish = Boolean(restaurantId && dishId);
 
-  const [restaurantDish, setRestaurantDish] = useState(null);
+  const [restaurantDish, setRestaurantDish] = useState(stateDishData || null);
   const [restaurantName, setRestaurantName] = useState("");
-  const [loading, setLoading] = useState(hasRestaurantDish);
+  const [loading, setLoading] = useState(hasRestaurantDish && !stateDishData);
   const [error, setError] = useState("");
 
   const dishes = [
@@ -88,6 +97,13 @@ function FoodDetails() {
   ];
 
   useEffect(() => {
+    // If state passed the dish data directly, bypass network fetches entirely
+    if (stateDishData) {
+      setRestaurantDish(stateDishData);
+      setLoading(false);
+      return;
+    }
+
     if (!hasRestaurantDish) {
       setRestaurantDish(null);
       setRestaurantName("");
@@ -103,8 +119,11 @@ function FoodDetails() {
         setLoading(true);
         setError("");
 
+        // 💡 Clean Fix: Inject hardcoded live Render cloud endpoint fallbacks securely
+        const baseUrl = "https://onrender.com";
+
         const response = await fetch(
-          `/api/restaurants/${restaurantId}`,
+          `${baseUrl}/api/restaurants/${restaurantId}`,
           { signal: controller.signal }
         );
 
@@ -114,7 +133,7 @@ function FoodDetails() {
           throw new Error(result.message || "Failed to load restaurant");
         }
 
-        const restaurant = result.data;
+        const restaurant = result.data || result.restaurant || result;
 
         const selectedDish = restaurant.menu?.find(
           (item) => String(item._id) === String(dishId)
@@ -125,7 +144,7 @@ function FoodDetails() {
         }
 
         setRestaurantDish(selectedDish);
-        setRestaurantName(restaurant.name);
+        setRestaurantName(restaurant.name || "Partner Restaurant");
       } catch (err) {
         if (err.name !== "AbortError") {
           setError(err.message || "Unable to load dish");
@@ -142,25 +161,25 @@ function FoodDetails() {
     fetchRestaurantDish();
 
     return () => controller.abort();
-  }, [restaurantId, dishId, hasRestaurantDish]);
+  }, [restaurantId, dishId, hasRestaurantDish, stateDishData]);
 
   const staticDish = dishes.find(
     (item) => item.name.toLowerCase() === name.toLowerCase()
   );
 
- const dish = hasRestaurantDish
-  ? {
-      ...restaurantDish,
-      image:
-        restaurantDish?.image ||
-        dishes.find(
-          (item) =>
-            item.name.toLowerCase() ===
-            restaurantDish?.name?.toLowerCase()
-        )?.image ||
-        "",
-    }
-  : staticDish;
+  const dish = hasRestaurantDish
+    ? {
+        ...restaurantDish,
+        image:
+          restaurantDish?.image ||
+          dishes.find(
+            (item) =>
+              item.name.toLowerCase() ===
+              restaurantDish?.name?.toLowerCase()
+          )?.image ||
+          "",
+      }
+    : staticDish;
 
   const handleAddToCart = () => {
     if (hasRestaurantDish && restaurantDish) {
@@ -171,7 +190,7 @@ function FoodDetails() {
           description: restaurantDish.description || "",
           price: Number(restaurantDish.price),
           restaurantId,
-          restaurantName,
+          restaurantName: restaurantName || "Partner Restaurant",
           dishId,
         })
       );
@@ -180,7 +199,7 @@ function FoodDetails() {
       dispatch(
         addToCart({
           name: staticDish.name,
-          image: "", 
+          image: staticDish.image || "", 
           description: staticDish.description || "",
           price: Number(staticDish.price),
           restaurantId: "static-menu",
@@ -243,7 +262,7 @@ function FoodDetails() {
 
         <div className="food-details-content">
           <p className="food-details-label">
-            {hasRestaurantDish ? restaurantName : dish.category}
+            {hasRestaurantDish ? restaurantName || "Menu Item" : dish.category}
           </p>
 
           <h1>{dish.name}</h1>
