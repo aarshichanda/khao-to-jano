@@ -19,8 +19,8 @@ function Restaurants() {
         setLoading(true);
         setError("");
 
-        // 💡 Absolute Fallback: Hardcodes your live production Render API link directly
-        const baseUrl = "https://onrender.com";
+        const rawUrl = import.meta.env.VITE_API_URL || "https://khao-to-jano-api.onrender.com";
+        const baseUrl = rawUrl.replace(/\/+$/, "");
 
         const response = await fetch(`${baseUrl}/api/restaurants`, {
           signal: controller.signal,

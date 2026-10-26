@@ -22,8 +22,8 @@ function RestaurantDetails() {
       setLoading(true);
       setError("");
 
-      // Read the Vite dynamic deployment variable cleanly
-      const baseUrl = import.meta.env.VITE_API_URL || "https://khao-to-jano-api.onrender.com";
+      const rawUrl = import.meta.env.VITE_API_URL || "https://khao-to-jano-api.onrender.com";
+      const baseUrl = rawUrl.replace(/\/+$/, "");
 
       const res = await fetch(`${baseUrl}/api/restaurants/${id}`);
       const result = await res.json();
@@ -96,7 +96,8 @@ function RestaurantDetails() {
 
     try {
       setSubmitMessage("");
-      const baseUrl = import.meta.env.VITE_API_URL || "";
+      const rawUrl = import.meta.env.VITE_API_URL || "https://khao-to-jano-api.onrender.com";
+      const baseUrl = rawUrl.replace(/\/+$/, "");
 
       const response = await fetch(`${baseUrl}/api/reviews/submit`, {
         method: "POST",
