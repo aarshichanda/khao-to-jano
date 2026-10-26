@@ -23,7 +23,7 @@ function RestaurantDetails() {
       setError("");
 
       // Read the Vite dynamic deployment variable cleanly
-      const baseUrl = import.meta.env.VITE_API_URL || "";
+      const baseUrl = import.meta.env.VITE_API_URL || "https://khao-to-jano-api.onrender.com";
 
       const res = await fetch(`${baseUrl}/api/restaurants/${id}`);
       const result = await res.json();
