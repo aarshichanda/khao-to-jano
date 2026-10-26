@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useDispatch } from "react-redux";
@@ -23,7 +22,10 @@ function RestaurantDetails() {
       setLoading(true);
       setError("");
 
-      const res = await fetch(`/api/restaurants/${id}`);
+      // Read the Vite dynamic deployment variable cleanly
+      const baseUrl = import.meta.env.VITE_API_URL || "";
+
+      const res = await fetch(`${baseUrl}/api/restaurants/${id}`);
       const result = await res.json();
 
       if (!res.ok) {
@@ -38,7 +40,7 @@ function RestaurantDetails() {
 
       setRestaurant(activeData);
 
-      const resReviews = await fetch(`/api/reviews/${id}`);
+      const resReviews = await fetch(`${baseUrl}/api/reviews/${id}`);
 
       if (resReviews.ok) {
         const revResult = await resReviews.json();
@@ -94,8 +96,9 @@ function RestaurantDetails() {
 
     try {
       setSubmitMessage("");
+      const baseUrl = import.meta.env.VITE_API_URL || "";
 
-      const response = await fetch("/api/reviews/submit", {
+      const response = await fetch(`${baseUrl}/api/reviews/submit`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
