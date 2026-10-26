@@ -51,7 +51,8 @@ function FoodDetails() {
         setLoading(true);
         setError("");
 
-        const baseUrl = "https://onrender.com";
+        // To match your true API domain perfectly:
+        const baseUrl = "https://khao-to-jano-api.onrender.com";
 
         const response = await fetch(
           `${baseUrl}/api/restaurants/${restaurantId}`,

@@ -22,7 +22,8 @@ function RestaurantDetails() {
       setLoading(true);
       setError("");
 
-      const rawUrl = import.meta.env.VITE_API_URL || "https://onrender.com";
+      // To match your true API domain perfectly:
+      const rawUrl = import.meta.env.VITE_API_URL || "https://khao-to-jano-api.onrender.com";
       const baseUrl = rawUrl.replace(/\/+$/, "");
 
       const res = await fetch(`${baseUrl}/api/restaurants/${id}`);
