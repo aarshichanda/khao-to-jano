@@ -172,69 +172,42 @@ function RestaurantDetails() {
           <Link to="/restaurants" className="back-listing-link">
             ← Back to Listings
           </Link>
-
           <h1 className="restaurant-title-text">{restaurant.name}</h1>
-
-          <p className="restaurant-cuisine-tags">
-            {restaurant.cuisine?.join(" • ")}
-          </p>
-
+          <p className="restaurant-cuisine-tags">{restaurant.cuisine?.join(" • ")}</p>
           <div className="restaurant-metrics-row">
-            <span className="rating-span">
-              ⭐ {restaurant.rating} / 5.0
-            </span>
-            <span className="time-span">
-              ⏱️ {restaurant.deliveryTime}
-            </span>
-            <span className="address-span">
-              📍 {restaurant.address}
-            </span>
+            <span className="rating-span">⭐ {restaurant.rating} / 5.0</span>
+            <span className="time-span">⏱️ {restaurant.deliveryTime}</span>
+            <span className="address-span">📍 {restaurant.address}</span>
           </div>
         </div>
       </header>
 
       <section className="menu-display-section">
         <h2 className="section-title">Our Menu</h2>
-
         <div className="menu-items-grid-container">
           {restaurant.menu?.map((dish, idx) => (
-            <article
-              key={dish._id || idx}
-              className="dish-menu-card"
-            >
+            <article key={dish._id || idx} className="dish-menu-card">
               <div className="dish-info-block">
                 <h3>{dish.name}</h3>
                 <p>{dish.description}</p>
               </div>
-
               <div className="dish-action-row">
-                <span className="price-tag-span">
-                  ₹{dish.price}
-                </span>
-
+                <span className="price-tag-span">₹{dish.price}</span>
                 <div className="button-group-div">
-                  {/* 💡 Clean Fix: Passes parameters safely via state mapping instead of messy query strings */}
+                  {/* 💡 Restored URL structure to work cleanly with FoodDetails parameter requirements */}
                   <Link
-                    to={`/food/${encodeURIComponent(dish.name)}`}
-                    state={{
-                      restaurantId: restaurant._id,
-                      dishId: dish._id || idx,
-                      dish: dish
-                    }}
+                    to={`/food/${encodeURIComponent(dish.name)}?restaurantId=${restaurant._id}&dishId=${dish._id || idx}`}
                     className="view-dish-btn"
                   >
                     View
                   </Link>
-
                   <button
                     type="button"
                     onClick={() => handleAddToCartClick(dish)}
                     className="add-to-cart-btn"
                     disabled={dish.isAvailable === false}
                   >
-                    {dish.isAvailable === false
-                      ? "Unavailable"
-                      : "Add to Cart"}
+                    {dish.isAvailable === false ? "Unavailable" : "Add to Cart"}
                   </button>
                 </div>
               </div>
@@ -246,15 +219,10 @@ function RestaurantDetails() {
       <section className="feedback-integration-row">
         <div className="submit-review-card-form">
           <h3>Share Your Experience</h3>
-
           <form onSubmit={handleReviewSubmit}>
             <div className="form-input-group">
               <label>Rating</label>
-
-              <select
-                value={rating}
-                onChange={(e) => setRating(Number(e.target.value))}
-              >
+              <select value={rating} onChange={(e) => setRating(Number(e.target.value))}>
                 <option value={5}>⭐⭐⭐⭐⭐ Excellent</option>
                 <option value={4}>⭐⭐⭐⭐ Very Good</option>
                 <option value={3}>⭐⭐⭐ Average</option>
@@ -262,10 +230,8 @@ function RestaurantDetails() {
                 <option value={1}>⭐ Poor</option>
               </select>
             </div>
-
             <div className="form-input-group">
               <label>Review</label>
-
               <textarea
                 placeholder="How was the food flavor or delivery speed?"
                 value={comment}
@@ -273,50 +239,28 @@ function RestaurantDetails() {
                 required
               />
             </div>
-
-            <div className="form-action-row-div">
-               <button
-                 type="submit"
-                 className="submit-feedback-action-btn"
-               >
-                 Submit Feedback
-               </button>
-            </div>
-
+            <button type="submit" className="submit-feedback-action-btn">
+              Submit Feedback
+            </button>
             {submitMessage && (
-              <p className={submitSuccess ? "msg-ok" : "msg-fail"}>
-                {submitMessage}
-              </p>
+              <p className={submitSuccess ? "msg-ok" : "msg-fail"}>{submitMessage}</p>
             )}
           </form>
         </div>
 
         <div className="reviews-feed-stream-display">
           <h3>Customer Reviews ({reviews.length})</h3>
-
           <div className="reviews-scroller-box">
             {reviews.length === 0 ? (
-              <p className="no-reviews-msg">
-                No customer feedback shared yet.
-              </p>
+              <p className="no-reviews-msg">No customer feedback shared yet.</p>
             ) : (
               reviews.map((rev) => (
-                <div
-                  key={rev._id}
-                  className="user-review-bubble-card"
-                >
+                <div key={rev._id} className="user-review-bubble-card">
                   <div className="review-card-header">
-                    <span className="user-name-label">
-                      {rev.username}
-                    </span>
-                    <span className="stars-label">
-                      {"⭐".repeat(rev.rating)}
-                    </span>
+                    <span className="user-name-label">{rev.username}</span>
+                    <span className="stars-label">{"⭐".repeat(rev.rating)}</span>
                   </div>
-
-                  <p className="review-comment-text">
-                    {rev.comment}
-                  </p>
+                  <p className="review-comment-text">{rev.comment}</p>
                 </div>
               ))
             )}
