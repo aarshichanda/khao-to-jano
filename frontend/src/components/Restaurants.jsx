@@ -1,4 +1,3 @@
-
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import RestaurantsCard from "./RestaurantsCard";
@@ -20,7 +19,10 @@ function Restaurants() {
         setLoading(true);
         setError("");
 
-        const response = await fetch("/api/restaurants", {
+        // 💡 Absolute Fallback: Hardcodes your live production Render API link directly
+        const baseUrl = "https://onrender.com";
+
+        const response = await fetch(`${baseUrl}/api/restaurants`, {
           signal: controller.signal,
         });
         const result = await response.json();
