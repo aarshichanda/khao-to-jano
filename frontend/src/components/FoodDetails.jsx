@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useDispatch } from "react-redux";
-import { useNavigate, useParams, useSearchParams, useLocation } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { addToCart } from "../redux/cartSlice";
 
 import paneerTikkaImage from "../../images/Food card/Paneer Tikka.webp";
@@ -16,25 +16,15 @@ function FoodDetails() {
   const { name = "" } = useParams();
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  const location = useLocation();
   const [searchParams] = useSearchParams();
 
-  // 1. Try parsing directly transferred state hooks first
-  const stateRestaurantId = location.state?.restaurantId;
-  const stateDishId = location.state?.dishId;
-  const stateDishData = location.state?.dish;
-
-  // 2. Extract fallback query search string inputs safely
-  const urlRestaurantId = searchParams.get("restaurantId");
-  const urlDishId = searchParams.get("dishId");
-
-  const restaurantId = stateRestaurantId || urlRestaurantId;
-  const dishId = stateDishId || urlDishId;
+  const restaurantId = searchParams.get("restaurantId");
+  const dishId = searchParams.get("dishId");
   const hasRestaurantDish = Boolean(restaurantId && dishId);
 
-  const [restaurantDish, setRestaurantDish] = useState(stateDishData || null);
+  const [restaurantDish, setRestaurantDish] = useState(null);
   const [restaurantName, setRestaurantName] = useState("");
-  const [loading, setLoading] = useState(hasRestaurantDish && !stateDishData);
+  const [loading, setLoading] = useState(hasRestaurantDish);
   const [error, setError] = useState("");
 
   const dishes = [
@@ -49,16 +39,7 @@ function FoodDetails() {
   ];
 
   useEffect(() => {
-    if (stateDishData) {
-      setRestaurantDish(stateDishData);
-      setLoading(false);
-      return;
-    }
-
     if (!hasRestaurantDish) {
-      setRestaurantDish(null);
-      setRestaurantName("");
-      setError("");
       setLoading(false);
       return;
     }
@@ -70,7 +51,6 @@ function FoodDetails() {
         setLoading(true);
         setError("");
 
-        // Enforce clean absolute URL targets explicitly
         const baseUrl = "https://onrender.com";
 
         const response = await fetch(
@@ -110,7 +90,7 @@ function FoodDetails() {
     fetchRestaurantDish();
 
     return () => controller.abort();
-  }, [restaurantId, dishId, hasRestaurantDish, stateDishData]);
+  }, [restaurantId, dishId, hasRestaurantDish]);
 
   const staticDish = dishes.find(
     (item) => item.name.toLowerCase() === name.toLowerCase()
