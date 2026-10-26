@@ -19,12 +19,12 @@ function FoodDetails() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
 
-  // Try parsing from clean location state transfer hooks first
+  // 1. Try parsing directly transferred state hooks first
   const stateRestaurantId = location.state?.restaurantId;
   const stateDishId = location.state?.dishId;
   const stateDishData = location.state?.dish;
 
-  // Fallback to URL search parameters if direct state is absent
+  // 2. Extract fallback query search string inputs safely
   const urlRestaurantId = searchParams.get("restaurantId");
   const urlDishId = searchParams.get("dishId");
 
@@ -38,66 +38,17 @@ function FoodDetails() {
   const [error, setError] = useState("");
 
   const dishes = [
-    {
-      name: "Paneer Tikka",
-      image: paneerTikkaImage,
-      description: "Smoky, spiced paneer grilled to perfection.",
-      price: 249,
-      category: "Starters",
-    },
-    {
-      name: "Chicken Biryani",
-      image: chickenBiryaniImage,
-      description: "Fragrant rice layered with flavourful chicken.",
-      price: 299,
-      category: "Biryani",
-    },
-    {
-      name: "Masala Dosa",
-      image: masalaDosaImage,
-      description: "Crispy dosa served with a delicious spiced filling.",
-      price: 179,
-      category: "South Indian",
-    },
-    {
-      name: "Paneer Butter Masala",
-      image: paneerButterMasalaImage,
-      description: "Creamy tomato gravy with tender paneer.",
-      price: 269,
-      category: "North Indian",
-    },
-    {
-      name: "Gulab Jamun",
-      image: gulabJamunImage,
-      description: "Soft, syrup-soaked Indian sweet.",
-      price: 129,
-      category: "Desserts",
-    },
-    {
-      name: "Chicken Butter Masala",
-      image: chickenButterMasalaImage,
-      description: "Tender chicken in a rich, creamy gravy.",
-      price: 289,
-      category: "North Indian",
-    },
-    {
-      name: "Hakka Noodles",
-      image: hakkaNoodlesImage,
-      description: "Wok-tossed noodles with aromatic vegetables.",
-      price: 199,
-      category: "Indo-Chinese",
-    },
-    {
-      name: "Chhole Bhature",
-      image: chholeBhatureImage,
-      description: "Spiced chickpeas paired with fluffy bhature.",
-      price: 189,
-      category: "North Indian",
-    },
+    { name: "Paneer Tikka", image: paneerTikkaImage, description: "Smoky, spiced paneer grilled to perfection.", price: 249, category: "Starters" },
+    { name: "Chicken Biryani", image: chickenBiryaniImage, description: "Fragrant rice layered with flavourful chicken.", price: 299, category: "Biryani" },
+    { name: "Masala Dosa", image: masalaDosaImage, description: "Crispy dosa served with a delicious spiced filling.", price: 179, category: "South Indian" },
+    { name: "Paneer Butter Masala", image: paneerButterMasalaImage, description: "Creamy tomato gravy with tender paneer.", price: 269, category: "North Indian" },
+    { name: "Gulab Jamun", image: gulabJamunImage, description: "Soft, syrup-soaked Indian sweet.", price: 129, category: "Desserts" },
+    { name: "Chicken Butter Masala", image: chickenButterMasalaImage, description: "Tender chicken in a rich, creamy gravy.", price: 289, category: "North Indian" },
+    { name: "Hakka Noodles", image: hakkaNoodlesImage, description: "Wok-tossed noodles with aromatic vegetables.", price: 199, category: "Indo-Chinese" },
+    { name: "Chhole Bhature", image: chholeBhatureImage, description: "Spiced chickpeas paired with fluffy bhature.", price: 189, category: "North Indian" },
   ];
 
   useEffect(() => {
-    // If state passed the dish data directly, bypass network fetches entirely
     if (stateDishData) {
       setRestaurantDish(stateDishData);
       setLoading(false);
@@ -119,7 +70,7 @@ function FoodDetails() {
         setLoading(true);
         setError("");
 
-        // 💡 Clean Fix: Inject hardcoded live Render cloud endpoint fallbacks securely
+        // Enforce clean absolute URL targets explicitly
         const baseUrl = "https://onrender.com";
 
         const response = await fetch(
@@ -133,23 +84,21 @@ function FoodDetails() {
           throw new Error(result.message || "Failed to load restaurant");
         }
 
-        const restaurant = result.data || result.restaurant || result;
+        const restaurantData = result.data || result.restaurant || result;
 
-        const selectedDish = restaurant.menu?.find(
+        const selectedDish = restaurantData.menu?.find(
           (item) => String(item._id) === String(dishId)
         );
 
-        if (!selectedDish || selectedDish.isAvailable === false) {
-          throw new Error("This dish is unavailable.");
+        if (!selectedDish) {
+          throw new Error("This dish details could not be found.");
         }
 
         setRestaurantDish(selectedDish);
-        setRestaurantName(restaurant.name || "Partner Restaurant");
+        setRestaurantName(restaurantData.name || "Partner Restaurant");
       } catch (err) {
         if (err.name !== "AbortError") {
-          setError(err.message || "Unable to load dish");
-          setRestaurantDish(null);
-          setRestaurantName("");
+          setError(err.message || "Unable to load dish information");
         }
       } finally {
         if (!controller.signal.aborted) {
@@ -173,11 +122,8 @@ function FoodDetails() {
         image:
           restaurantDish?.image ||
           dishes.find(
-            (item) =>
-              item.name.toLowerCase() ===
-              restaurantDish?.name?.toLowerCase()
-          )?.image ||
-          "",
+            (item) => item.name.toLowerCase() === restaurantDish?.name?.toLowerCase()
+          )?.image || "",
       }
     : staticDish;
 
@@ -199,7 +145,7 @@ function FoodDetails() {
       dispatch(
         addToCart({
           name: staticDish.name,
-          image: staticDish.image || "", 
+          image: staticDish.image || "",
           description: staticDish.description || "",
           price: Number(staticDish.price),
           restaurantId: "static-menu",
@@ -218,7 +164,7 @@ function FoodDetails() {
       <main className="food-details-page">
         <section className="food-not-found">
           <p className="food-details-label">FOOD DETAILS</p>
-          <h1>Loading dish...</h1>
+          <h1>Loading dish details...</h1>
         </section>
       </main>
     );
@@ -231,16 +177,11 @@ function FoodDetails() {
           <p className="food-details-label">FOOD DETAILS</p>
           <h1>{error || "Dish not found"}</h1>
           <p>We could not find the dish you are looking for.</p>
-
           <button
             className="food-back-button"
-            onClick={() =>
-              navigate(
-                restaurantId ? `/restaurants/${restaurantId}` : "/menu"
-              )
-            }
+            onClick={() => navigate(restaurantId ? `/restaurants/${restaurantId}` : "/restaurants")}
           >
-            {restaurantId ? "Back to Restaurant" : "Back to Menu"}
+            Go Back
           </button>
         </section>
       </main>
@@ -254,9 +195,7 @@ function FoodDetails() {
           {dish.image ? (
             <img src={dish.image} alt={dish.name} />
           ) : (
-            <div className="food-image-placeholder">
-              <p>{dish.name}</p>
-            </div>
+            <div className="food-image-placeholder"><p>{dish.name}</p></div>
           )}
         </div>
 
@@ -264,31 +203,19 @@ function FoodDetails() {
           <p className="food-details-label">
             {hasRestaurantDish ? restaurantName || "Menu Item" : dish.category}
           </p>
-
           <h1>{dish.name}</h1>
-
           <p className="food-details-description">
             {dish.description || "No description available yet."}
           </p>
-
           <div className="food-details-price">₹{dish.price}</div>
-
-          <button
-            className="food-add-button"
-            onClick={handleAddToCart}
-          >
+          <button className="food-add-button" onClick={handleAddToCart}>
             Add to Cart
           </button>
-
           <button
             className="food-back-button"
-            onClick={() =>
-              navigate(
-                restaurantId ? `/restaurants/${restaurantId}` : "/menu"
-              )
-            }
+            onClick={() => navigate(restaurantId ? `/restaurants/${restaurantId}` : "/restaurants")}
           >
-            {restaurantId ? "← Back to Restaurant" : "← Back to Menu"}
+            ← Back to Restaurant
           </button>
         </div>
       </section>
