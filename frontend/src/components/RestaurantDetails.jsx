@@ -22,7 +22,7 @@ function RestaurantDetails() {
       setLoading(true);
       setError("");
 
-      const rawUrl = import.meta.env.VITE_API_URL || "https://khao-to-jano-api.onrender.com";
+      const rawUrl = import.meta.env.VITE_API_URL || "https://onrender.com";
       const baseUrl = rawUrl.replace(/\/+$/, "");
 
       const res = await fetch(`${baseUrl}/api/restaurants/${id}`);
@@ -96,7 +96,7 @@ function RestaurantDetails() {
 
     try {
       setSubmitMessage("");
-      const rawUrl = import.meta.env.VITE_API_URL || "https://khao-to-jano-api.onrender.com";
+      const rawUrl = import.meta.env.VITE_API_URL || "https://onrender.com";
       const baseUrl = rawUrl.replace(/\/+$/, "");
 
       const response = await fetch(`${baseUrl}/api/reviews/submit`, {
@@ -213,8 +213,14 @@ function RestaurantDetails() {
                 </span>
 
                 <div className="button-group-div">
+                  {/* 💡 Clean Fix: Passes parameters safely via state mapping instead of messy query strings */}
                   <Link
-                    to={`/food/${encodeURIComponent(dish.name)}?restaurantId=${restaurant._id}&dishId=${dish._id || idx}`}
+                    to={`/food/${encodeURIComponent(dish.name)}`}
+                    state={{
+                      restaurantId: restaurant._id,
+                      dishId: dish._id || idx,
+                      dish: dish
+                    }}
                     className="view-dish-btn"
                   >
                     View
@@ -268,12 +274,14 @@ function RestaurantDetails() {
               />
             </div>
 
-            <button
-              type="submit"
-              className="submit-feedback-action-btn"
-            >
-              Submit Feedback
-            </button>
+            <div className="form-action-row-div">
+               <button
+                 type="submit"
+                 className="submit-feedback-action-btn"
+               >
+                 Submit Feedback
+               </button>
+            </div>
 
             {submitMessage && (
               <p className={submitSuccess ? "msg-ok" : "msg-fail"}>
