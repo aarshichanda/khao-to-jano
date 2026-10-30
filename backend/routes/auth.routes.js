@@ -1,4 +1,3 @@
-
 import express from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -8,199 +7,7 @@ import User from "../models/user.model.js";
 import OwnerApplication from "../models/ownerApplication.model.js";
 import Restaurant from "../models/restaurant.model.js";
 import { sendEmail } from "../utils/sendEmail.js";
-
-/**
- * @swagger
- * tags:
- *   name: Authentication
- *   description: Platform identity management, authorization workflows, and role activations
- */
-
-/**
- * @swagger
- * /api/auth/register:
- *   post:
- *     summary: Register a new customer account
- *     tags: [Authentication]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - name
- *               - email
- *               - password
- *             properties:
- *               name:
- *                 type: string
- *                 example: Aarshi Chanda
- *               username:
- *                 type: string
- *                 example: aarshi90
- *               email:
- *                 type: string
- *                 format: email
- *                 example: aarshi@gmail.com
- *               phone:
- *                 type: string
- *                 example: "9876543210"
- *               password:
- *                 type: string
- *                 format: password
- *                 example: SecurePass123!
- *     responses:
- *       201:
- *         description: Customer account created successfully
- *       400:
- *         description: Missing fields or password too short
- *       409:
- *         description: Conflict - Email already registered
- *       500:
- *         description: Internal server error
- */
-
-/**
- * @swagger
- * /api/auth/login:
- *   post:
- *     summary: Authenticate customer or restaurant owner
- *     description: Supports logging in via email for customers, or loginUsername for approved restaurant owners.
- *     tags: [Authentication]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - password
- *             properties:
- *               identifier:
- *                 type: string
- *                 description: Can be email or loginUsername
- *                 example: aarshi@gmail.com
- *               password:
- *                 type: string
- *                 format: password
- *                 example: SecurePass123!
- *     responses:
- *       200:
- *         description: Authentication successful, authorization token returned
- *       400:
- *         description: Missing identifier or password
- *       401:
- *         description: Unauthorized - Invalid username/email or password
- *       500:
- *         description: Internal server error
- */
-
-/**
- * @swagger
- * /api/auth/forgot-password:
- *   post:
- *     summary: Request a password reset link email
- *     tags: [Authentication]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - email
- *             properties:
- *               email:
- *                 type: string
- *                 format: email
- *                 example: aarshi@gmail.com
- *     responses:
- *       200:
- *         description: Safe status returned regardless of email existence to prevent user enumeration
- *       400:
- *         description: Bad request - Email missing
- *       500:
- *         description: Internal server error
- */
-
-/**
- * @swagger
- * /api/auth/reset-password:
- *   post:
- *     summary: Reset account password using secure token
- *     tags: [Authentication]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - token
- *               - password
- *             properties:
- *               token:
- *                 type: string
- *                 description: SHA256 hashed signature sent to user email
- *                 example: 3c6b2...af82
- *               password:
- *                 type: string
- *                 format: password
- *                 description: Must be at least 12 characters long
- *                 example: MyNewSuperSecurePassword123!
- *               confirmPassword:
- *                 type: string
- *                 format: password
- *                 example: MyNewSuperSecurePassword123!
- *     responses:
- *       200:
- *         description: Password updated successfully
- *       400:
- *         description: Token expired, invalid signature, or password mismatch
- *       500:
- *         description: Internal server error
- */
-
-/**
- * @swagger
- * /api/auth/activate-owner:
- *   post:
- *     summary: Activate an approved restaurant owner account and link restaurant infrastructure
- *     tags: [Authentication]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - token
- *             properties:
- *               token:
- *                 type: string
- *                 description: Security activation token sent by administrator
- *                 example: f4e82...01cb
- *               password:
- *                 type: string
- *                 format: password
- *                 description: Required only if creating a new user account profile (min 12 chars)
- *                 example: OwnerSecurePass123!
- *               loginUsername:
- *                 type: string
- *                 description: Optional chosen custom platform username
- *                 example: aarshikitchen
- *     responses:
- *       200:
- *         description: Account successfully configured, restaurant linked and marked active, session token returned
- *       400:
- *         description: Invalid or expired activation link
- *       409:
- *         description: Username already in use or restaurant already assigned
- *       500:
- *         description: Internal server error
- */
-
+import { JWT_SECRET } from "../config/env.js";
 
 const router = express.Router();
 
@@ -215,9 +22,7 @@ const getUserRoles = (user) => {
 };
 
 const normalizeUsername = (value) =>
-  typeof value === "string"
-    ? value.trim().toLowerCase()
-    : "";
+  typeof value === "string" ? value.trim().toLowerCase() : "";
 
 // POST /api/auth/register
 router.post("/register", async (req, res) => {
@@ -227,11 +32,7 @@ router.post("/register", async (req, res) => {
     const normalizedName = (name || username || "").trim();
     const normalizedEmail = (email || "").trim().toLowerCase();
 
-    if (
-      !normalizedName ||
-      !normalizedEmail ||
-      typeof password !== "string"
-    ) {
+    if (!normalizedName || !normalizedEmail || typeof password !== "string") {
       return res.status(400).json({
         success: false,
         message: "Name, email and password are required.",
@@ -252,8 +53,7 @@ router.post("/register", async (req, res) => {
     if (existingUser) {
       return res.status(409).json({
         success: false,
-        message:
-          "An account with this email already exists. Please log in.",
+        message: "An account with this email already exists. Please log in.",
       });
     }
 
@@ -283,8 +83,7 @@ router.post("/register", async (req, res) => {
     if (error.code === 11000) {
       return res.status(409).json({
         success: false,
-        message:
-          "An account with this email already exists. Please log in.",
+        message: "An account with this email already exists. Please log in.",
       });
     }
 
@@ -329,10 +128,7 @@ router.post("/login", async (req, res) => {
     } else {
       user = await User.findOne({
         loginUsername: normalizeUsername(identifier),
-        $or: [
-          { role: "restaurant_owner" },
-          { roles: "restaurant_owner" },
-        ],
+        $or: [{ role: "restaurant_owner" }, { roles: "restaurant_owner" }],
       });
     }
 
@@ -351,8 +147,8 @@ router.post("/login", async (req, res) => {
         role: user.role,
         roles,
       },
-      process.env.JWT_SECRET || "secretkey123",
-      { expiresIn: "7d" }
+      JWT_SECRET,
+      { expiresIn: "7d" },
     );
 
     return res.status(200).json({
@@ -400,7 +196,7 @@ router.post("/forgot-password", async (req, res) => {
     }
 
     user = await User.findOne({ email }).select(
-      "+passwordResetTokenHash +passwordResetExpiresAt"
+      "+passwordResetTokenHash +passwordResetExpiresAt",
     );
 
     if (!user) {
@@ -418,14 +214,11 @@ router.post("/forgot-password", async (req, res) => {
       .digest("hex");
 
     user.passwordResetTokenHash = tokenHash;
-    user.passwordResetExpiresAt = new Date(
-      Date.now() + 30 * 60 * 1000
-    );
+    user.passwordResetExpiresAt = new Date(Date.now() + 30 * 60 * 1000);
 
     await user.save();
 
-    const frontendUrl =
-      process.env.FRONTEND_URL || "http://localhost:5173";
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
 
     const resetUrl = new URL("/reset-password", frontendUrl);
     resetUrl.searchParams.set("token", rawToken);
@@ -439,7 +232,7 @@ router.post("/forgot-password", async (req, res) => {
           ">": "&gt;",
           '"': "&quot;",
           "'": "&#39;",
-        })[char]
+        })[char],
     );
 
     const safeResetUrl = resetUrl.href.replace(/&/g, "&amp;");
@@ -510,10 +303,7 @@ router.post("/reset-password", async (req, res) => {
       });
     }
 
-    if (
-      confirmPassword !== undefined &&
-      confirmPassword !== password
-    ) {
+    if (confirmPassword !== undefined && confirmPassword !== password) {
       return res.status(400).json({
         success: false,
         message: "Passwords do not match.",
@@ -554,8 +344,7 @@ router.post("/reset-password", async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message:
-        "Unable to reset your password right now. Please try again.",
+      message: "Unable to reset your password right now. Please try again.",
     });
   }
 });
@@ -596,8 +385,7 @@ router.post("/activate-owner", async (req, res) => {
     if (!application) {
       return res.status(400).json({
         success: false,
-        message:
-          "The activation link is invalid, expired, or already used.",
+        message: "The activation link is invalid, expired, or already used.",
       });
     }
 
@@ -609,8 +397,7 @@ router.post("/activate-owner", async (req, res) => {
       });
     }
 
-    const isExistingRestaurant =
-      application.restaurantIsExisting === true;
+    const isExistingRestaurant = application.restaurantIsExisting === true;
 
     const existingUser = await User.findOne({
       email: application.email.trim().toLowerCase(),
@@ -627,11 +414,11 @@ router.post("/activate-owner", async (req, res) => {
       // Prefer an explicitly supplied login username.
       // Otherwise create a predictable ID from the applicant's name.
       const requestedUsername = normalizeUsername(
-        req.body.loginUsername || application.loginUsername
+        req.body.loginUsername || application.loginUsername,
       );
 
       const generatedUsername = normalizeUsername(
-        application.applicantName
+        application.applicantName,
       ).replace(/[^a-z0-9]/g, "");
 
       const loginUsername = requestedUsername || generatedUsername;
@@ -639,8 +426,7 @@ router.post("/activate-owner", async (req, res) => {
       if (!loginUsername) {
         return res.status(400).json({
           success: false,
-          message:
-            "A valid restaurant-owner login username is required.",
+          message: "A valid restaurant-owner login username is required.",
         });
       }
 
@@ -688,11 +474,11 @@ router.post("/activate-owner", async (req, res) => {
       // Set a username only if this account does not already have one.
       if (!user.loginUsername) {
         const requestedUsername = normalizeUsername(
-          req.body.loginUsername || application.loginUsername
+          req.body.loginUsername || application.loginUsername,
         );
 
         const generatedUsername = normalizeUsername(
-          application.applicantName
+          application.applicantName,
         ).replace(/[^a-z0-9]/g, "");
 
         const loginUsername = requestedUsername || generatedUsername;
@@ -700,8 +486,7 @@ router.post("/activate-owner", async (req, res) => {
         if (!loginUsername) {
           return res.status(400).json({
             success: false,
-            message:
-              "A valid restaurant-owner login username is required.",
+            message: "A valid restaurant-owner login username is required.",
           });
         }
 
@@ -745,7 +530,7 @@ router.post("/activate-owner", async (req, res) => {
       {
         new: true,
         runValidators: true,
-      }
+      },
     );
 
     if (!restaurant) {
@@ -789,8 +574,8 @@ router.post("/activate-owner", async (req, res) => {
         role: user.role,
         roles,
       },
-      process.env.JWT_SECRET || "secretkey123",
-      { expiresIn: "7d" }
+      JWT_SECRET,
+      { expiresIn: "7d" },
     );
 
     return res.status(200).json({
@@ -811,8 +596,7 @@ router.post("/activate-owner", async (req, res) => {
 
     if (user && claimedRestaurantId) {
       try {
-        const isExistingRestaurant =
-          application?.restaurantIsExisting === true;
+        const isExistingRestaurant = application?.restaurantIsExisting === true;
 
         await Restaurant.updateOne(
           {
@@ -823,7 +607,7 @@ router.post("/activate-owner", async (req, res) => {
             $set: isExistingRestaurant
               ? { owner: null }
               : { owner: null, isActive: false },
-          }
+          },
         );
       } catch (rollbackError) {
         console.error("Restaurant rollback error:", rollbackError);
@@ -856,8 +640,7 @@ router.post("/activate-owner", async (req, res) => {
     if (error.code === 11000) {
       return res.status(409).json({
         success: false,
-        message:
-          "An account already exists with that email or username.",
+        message: "An account already exists with that email or username.",
       });
     }
 
