@@ -1,4 +1,3 @@
-
 import express from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -8,6 +7,7 @@ import User from "../models/user.model.js";
 import OwnerApplication from "../models/ownerApplication.model.js";
 import Restaurant from "../models/restaurant.model.js";
 import { sendEmail } from "../utils/sendEmail.js";
+import { JWT_SECRET } from "../config/env.js";
 
 /**
  * @swagger
@@ -201,7 +201,6 @@ import { sendEmail } from "../utils/sendEmail.js";
  *         description: Internal server error
  */
 
-
 const router = express.Router();
 
 const getUserRoles = (user) => {
@@ -215,9 +214,7 @@ const getUserRoles = (user) => {
 };
 
 const normalizeUsername = (value) =>
-  typeof value === "string"
-    ? value.trim().toLowerCase()
-    : "";
+  typeof value === "string" ? value.trim().toLowerCase() : "";
 
 // POST /api/auth/register
 router.post("/register", async (req, res) => {
@@ -227,11 +224,7 @@ router.post("/register", async (req, res) => {
     const normalizedName = (name || username || "").trim();
     const normalizedEmail = (email || "").trim().toLowerCase();
 
-    if (
-      !normalizedName ||
-      !normalizedEmail ||
-      typeof password !== "string"
-    ) {
+    if (!normalizedName || !normalizedEmail || typeof password !== "string") {
       return res.status(400).json({
         success: false,
         message: "Name, email and password are required.",
@@ -252,8 +245,7 @@ router.post("/register", async (req, res) => {
     if (existingUser) {
       return res.status(409).json({
         success: false,
-        message:
-          "An account with this email already exists. Please log in.",
+        message: "An account with this email already exists. Please log in.",
       });
     }
 
@@ -283,8 +275,7 @@ router.post("/register", async (req, res) => {
     if (error.code === 11000) {
       return res.status(409).json({
         success: false,
-        message:
-          "An account with this email already exists. Please log in.",
+        message: "An account with this email already exists. Please log in.",
       });
     }
 
@@ -329,10 +320,7 @@ router.post("/login", async (req, res) => {
     } else {
       user = await User.findOne({
         loginUsername: normalizeUsername(identifier),
-        $or: [
-          { role: "restaurant_owner" },
-          { roles: "restaurant_owner" },
-        ],
+        $or: [{ role: "restaurant_owner" }, { roles: "restaurant_owner" }],
       });
     }
 
@@ -351,8 +339,8 @@ router.post("/login", async (req, res) => {
         role: user.role,
         roles,
       },
-      process.env.JWT_SECRET || "secretkey123",
-      { expiresIn: "7d" }
+      JWT_SECRET,
+      { expiresIn: "7d" },
     );
 
     return res.status(200).json({
@@ -400,7 +388,7 @@ router.post("/forgot-password", async (req, res) => {
     }
 
     user = await User.findOne({ email }).select(
-      "+passwordResetTokenHash +passwordResetExpiresAt"
+      "+passwordResetTokenHash +passwordResetExpiresAt",
     );
 
     if (!user) {
@@ -418,14 +406,11 @@ router.post("/forgot-password", async (req, res) => {
       .digest("hex");
 
     user.passwordResetTokenHash = tokenHash;
-    user.passwordResetExpiresAt = new Date(
-      Date.now() + 30 * 60 * 1000
-    );
+    user.passwordResetExpiresAt = new Date(Date.now() + 30 * 60 * 1000);
 
     await user.save();
 
-    const frontendUrl =
-      process.env.FRONTEND_URL || "http://localhost:5173";
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
 
     const resetUrl = new URL("/reset-password", frontendUrl);
     resetUrl.searchParams.set("token", rawToken);
@@ -439,7 +424,7 @@ router.post("/forgot-password", async (req, res) => {
           ">": "&gt;",
           '"': "&quot;",
           "'": "&#39;",
-        })[char]
+        })[char],
     );
 
     const safeResetUrl = resetUrl.href.replace(/&/g, "&amp;");
@@ -510,10 +495,7 @@ router.post("/reset-password", async (req, res) => {
       });
     }
 
-    if (
-      confirmPassword !== undefined &&
-      confirmPassword !== password
-    ) {
+    if (confirmPassword !== undefined && confirmPassword !== password) {
       return res.status(400).json({
         success: false,
         message: "Passwords do not match.",
@@ -554,8 +536,7 @@ router.post("/reset-password", async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message:
-        "Unable to reset your password right now. Please try again.",
+      message: "Unable to reset your password right now. Please try again.",
     });
   }
 });
@@ -596,8 +577,7 @@ router.post("/activate-owner", async (req, res) => {
     if (!application) {
       return res.status(400).json({
         success: false,
-        message:
-          "The activation link is invalid, expired, or already used.",
+        message: "The activation link is invalid, expired, or already used.",
       });
     }
 
@@ -609,8 +589,7 @@ router.post("/activate-owner", async (req, res) => {
       });
     }
 
-    const isExistingRestaurant =
-      application.restaurantIsExisting === true;
+    const isExistingRestaurant = application.restaurantIsExisting === true;
 
     const existingUser = await User.findOne({
       email: application.email.trim().toLowerCase(),
@@ -627,11 +606,11 @@ router.post("/activate-owner", async (req, res) => {
       // Prefer an explicitly supplied login username.
       // Otherwise create a predictable ID from the applicant's name.
       const requestedUsername = normalizeUsername(
-        req.body.loginUsername || application.loginUsername
+        req.body.loginUsername || application.loginUsername,
       );
 
       const generatedUsername = normalizeUsername(
-        application.applicantName
+        application.applicantName,
       ).replace(/[^a-z0-9]/g, "");
 
       const loginUsername = requestedUsername || generatedUsername;
@@ -639,8 +618,7 @@ router.post("/activate-owner", async (req, res) => {
       if (!loginUsername) {
         return res.status(400).json({
           success: false,
-          message:
-            "A valid restaurant-owner login username is required.",
+          message: "A valid restaurant-owner login username is required.",
         });
       }
 
@@ -688,11 +666,11 @@ router.post("/activate-owner", async (req, res) => {
       // Set a username only if this account does not already have one.
       if (!user.loginUsername) {
         const requestedUsername = normalizeUsername(
-          req.body.loginUsername || application.loginUsername
+          req.body.loginUsername || application.loginUsername,
         );
 
         const generatedUsername = normalizeUsername(
-          application.applicantName
+          application.applicantName,
         ).replace(/[^a-z0-9]/g, "");
 
         const loginUsername = requestedUsername || generatedUsername;
@@ -700,8 +678,7 @@ router.post("/activate-owner", async (req, res) => {
         if (!loginUsername) {
           return res.status(400).json({
             success: false,
-            message:
-              "A valid restaurant-owner login username is required.",
+            message: "A valid restaurant-owner login username is required.",
           });
         }
 
@@ -745,7 +722,7 @@ router.post("/activate-owner", async (req, res) => {
       {
         new: true,
         runValidators: true,
-      }
+      },
     );
 
     if (!restaurant) {
@@ -789,8 +766,8 @@ router.post("/activate-owner", async (req, res) => {
         role: user.role,
         roles,
       },
-      process.env.JWT_SECRET || "secretkey123",
-      { expiresIn: "7d" }
+      JWT_SECRET,
+      { expiresIn: "7d" },
     );
 
     return res.status(200).json({
@@ -811,8 +788,7 @@ router.post("/activate-owner", async (req, res) => {
 
     if (user && claimedRestaurantId) {
       try {
-        const isExistingRestaurant =
-          application?.restaurantIsExisting === true;
+        const isExistingRestaurant = application?.restaurantIsExisting === true;
 
         await Restaurant.updateOne(
           {
@@ -823,7 +799,7 @@ router.post("/activate-owner", async (req, res) => {
             $set: isExistingRestaurant
               ? { owner: null }
               : { owner: null, isActive: false },
-          }
+          },
         );
       } catch (rollbackError) {
         console.error("Restaurant rollback error:", rollbackError);
@@ -856,8 +832,7 @@ router.post("/activate-owner", async (req, res) => {
     if (error.code === 11000) {
       return res.status(409).json({
         success: false,
-        message:
-          "An account already exists with that email or username.",
+        message: "An account already exists with that email or username.",
       });
     }
 

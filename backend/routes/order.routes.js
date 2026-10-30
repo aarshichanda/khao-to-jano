@@ -1,10 +1,10 @@
-
 import express from "express";
 import mongoose from "mongoose";
 import { randomUUID } from "node:crypto";
 import { protect } from "../middleware/auth.middleware.js";
 import Order from "../models/order.model.js";
 import Restaurant from "../models/restaurant.model.js";
+import Coupon from "../models/coupon.model.js";
 
 /**
  * @swagger
@@ -176,7 +176,6 @@ import Restaurant from "../models/restaurant.model.js";
  *         description: Internal runtime engine crash
  */
 
-
 const router = express.Router();
 
 const validId = (id) => {
@@ -184,21 +183,54 @@ const validId = (id) => {
   return mongoose.Types.ObjectId.isValid(id.trim());
 };
 
-const calculateCouponDiscount = (couponCode, subtotal) => {
+// Validate a coupon against the database and compute its discount.
+// Mirrors POST /api/coupons/validate so a single source of truth governs
+// which codes exist, their type, caps, expiry, and minimum order amount.
+const calculateCouponDiscount = async (couponCode, subtotal) => {
   if (!couponCode) {
     return { valid: true, discount: 0 };
   }
 
-  if (couponCode !== "FIRST50") {
+  const coupon = await Coupon.findOne({ code: couponCode });
+
+  if (!coupon) {
+    return { valid: false, message: "Invalid coupon code." };
+  }
+
+  if (!coupon.isActive) {
+    return { valid: false, message: "This coupon is no longer active." };
+  }
+
+  if (coupon.expiryDate && new Date(coupon.expiryDate) < new Date()) {
+    return { valid: false, message: "This coupon has expired." };
+  }
+
+  if (subtotal < coupon.minOrderAmount) {
     return {
       valid: false,
-      message: "Invalid coupon code.",
+      message: `Minimum order amount of ₹${coupon.minOrderAmount} required for this coupon.`,
     };
   }
 
+  let discount =
+    coupon.discountType === "flat"
+      ? coupon.discountValue
+      : (subtotal * coupon.discountValue) / 100;
+
+  if (
+    coupon.discountType === "percentage" &&
+    coupon.maxDiscountAmount &&
+    discount > coupon.maxDiscountAmount
+  ) {
+    discount = coupon.maxDiscountAmount;
+  }
+
+  // Never discount more than the order itself.
+  discount = Math.min(discount, subtotal);
+
   return {
     valid: true,
-    discount: Math.round(Math.min(50, subtotal * 0.1) * 100) / 100,
+    discount: Math.round(discount * 100) / 100,
   };
 };
 
@@ -247,7 +279,7 @@ router.post("/", protect, async (req, res) => {
         (group) =>
           !validId(group?.restaurant) ||
           !Array.isArray(group.items) ||
-          group.items.length === 0
+          group.items.length === 0,
       )
     ) {
       console.error("[ORDER] Invalid restaurant groups", groups);
@@ -260,7 +292,7 @@ router.post("/", protect, async (req, res) => {
     }
 
     const restaurantIds = groups.map((group) =>
-      String(group.restaurant).trim()
+      String(group.restaurant).trim(),
     );
 
     if (new Set(restaurantIds).size !== restaurantIds.length) {
@@ -303,7 +335,7 @@ router.post("/", protect, async (req, res) => {
       restaurantDocuments.map((restaurant) => [
         restaurant._id.toString(),
         restaurant,
-      ])
+      ]),
     );
 
     if (restaurantsById.size !== groups.length) {
@@ -328,9 +360,7 @@ router.post("/", protect, async (req, res) => {
     const normalizedCoupon = couponCode.trim().toUpperCase();
 
     const normalizedGroups = groups.map((group) => {
-      const restaurant = restaurantsById.get(
-        String(group.restaurant).trim()
-      );
+      const restaurant = restaurantsById.get(String(group.restaurant).trim());
 
       const normalizedItems = [];
 
@@ -341,7 +371,7 @@ router.post("/", protect, async (req, res) => {
         if (!validId(dishId)) {
           throw Object.assign(
             new Error("Every cart item must have a valid menu-item ID."),
-            { statusCode: 400 }
+            { statusCode: 400 },
           );
         }
 
@@ -350,16 +380,16 @@ router.post("/", protect, async (req, res) => {
         if (!dish) {
           throw Object.assign(
             new Error(
-              `Dish ID ${dishId} does not belong to restaurant ${restaurant.name}.`
+              `Dish ID ${dishId} does not belong to restaurant ${restaurant.name}.`,
             ),
-            { statusCode: 400 }
+            { statusCode: 400 },
           );
         }
 
         if (dish.isAvailable === false) {
           throw Object.assign(
             new Error(`${dish.name} is currently unavailable.`),
-            { statusCode: 400 }
+            { statusCode: 400 },
           );
         }
 
@@ -368,7 +398,7 @@ router.post("/", protect, async (req, res) => {
         if (!Number.isSafeInteger(quantity) || quantity < 1) {
           throw Object.assign(
             new Error("Each item must have a valid positive quantity."),
-            { statusCode: 400 }
+            { statusCode: 400 },
           );
         }
 
@@ -384,8 +414,8 @@ router.post("/", protect, async (req, res) => {
         Math.round(
           normalizedItems.reduce(
             (sum, item) => sum + item.price * item.quantity,
-            0
-          ) * 100
+            0,
+          ) * 100,
         ) / 100;
 
       return {
@@ -398,12 +428,12 @@ router.post("/", protect, async (req, res) => {
 
     const combinedSubtotal = normalizedGroups.reduce(
       (sum, group) => sum + group.subtotal,
-      0
+      0,
     );
 
-    const couponResult = calculateCouponDiscount(
+    const couponResult = await calculateCouponDiscount(
       normalizedCoupon,
-      combinedSubtotal
+      combinedSubtotal,
     );
 
     if (!couponResult.valid) {
@@ -418,10 +448,7 @@ router.post("/", protect, async (req, res) => {
     let remainingDiscount = couponResult.discount;
 
     const orderDocuments = normalizedGroups.map((group) => {
-      const discountAmount = Math.min(
-        remainingDiscount,
-        group.subtotal
-      );
+      const discountAmount = Math.min(remainingDiscount, group.subtotal);
 
       remainingDiscount =
         Math.round((remainingDiscount - discountAmount) * 100) / 100;
@@ -429,8 +456,8 @@ router.post("/", protect, async (req, res) => {
       const totalAmount = Math.max(
         0,
         Math.round(
-          (group.subtotal + group.deliveryCharge - discountAmount) * 100
-        ) / 100
+          (group.subtotal + group.deliveryCharge - discountAmount) * 100,
+        ) / 100,
       );
 
       return {
@@ -459,9 +486,7 @@ router.post("/", protect, async (req, res) => {
     console.log("[ORDER] Saving orders", {
       checkoutId,
       count: orderDocuments.length,
-      restaurantIds: orderDocuments.map((order) =>
-        order.restaurant.toString()
-      ),
+      restaurantIds: orderDocuments.map((order) => order.restaurant.toString()),
     });
 
     // Insert all restaurant orders.
@@ -480,18 +505,14 @@ router.post("/", protect, async (req, res) => {
 
     if (io && paymentMethod === "COD") {
       for (const order of createdOrders) {
-        io.to(`restaurant:${order.restaurant.toString()}`).emit(
-          "new-order",
-          { orderId: order._id.toString() }
-        );
+        io.to(`restaurant:${order.restaurant.toString()}`).emit("new-order", {
+          orderId: order._id.toString(),
+        });
 
-        io.to(`customer:${req.user._id.toString()}`).emit(
-          "order-updated",
-          {
-            orderId: order._id.toString(),
-            orderStatus: order.orderStatus,
-          }
-        );
+        io.to(`customer:${req.user._id.toString()}`).emit("order-updated", {
+          orderId: order._id.toString(),
+          orderStatus: order.orderStatus,
+        });
       }
 
       io.to("admins").emit("order-updated", {
