@@ -5,13 +5,6 @@ import Order from "../models/order.model.js";
 
 const router = express.Router();
 
-/**
- * @swagger
- * tags:
- *   name: PayU Payments
- *   description: Online merchant transaction pipelines, cryptographic hash validations, and webhook hooks callbacks
- */
-
 const sha512 = (value) =>
   crypto.createHash("sha512").update(value).digest("hex");
 
@@ -19,10 +12,7 @@ const safeEqual = (a, b) => {
   if (typeof a !== "string" || typeof b !== "string") return false;
   const left = Buffer.from(a.toLowerCase(), "utf8");
   const right = Buffer.from(b.toLowerCase(), "utf8");
-  return (
-    left.length === right.length &&
-    crypto.timingSafeEqual(left, right)
-  );
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
 };
 
 const getConfig = () => {
@@ -45,9 +35,7 @@ const getConfig = () => {
     .map(([name]) => name);
 
   if (missing.length) {
-    throw new Error(
-      `Missing PayU configuration: ${missing.join(", ")}`
-    );
+    throw new Error(`Missing PayU configuration: ${missing.join(", ")}`);
   }
 
   const baseUrl = PAYU_BASE_URL.replace(/\/+$/, "");
@@ -55,44 +43,14 @@ const getConfig = () => {
   return {
     PAYU_KEY,
     PAYU_SALT,
-    PAYU_BASE_URL: baseUrl.endsWith("/_payment") ? baseUrl : `${baseUrl}/_payment`,
+    PAYU_BASE_URL: baseUrl.endsWith("/_payment")
+      ? baseUrl
+      : `${baseUrl}/_payment`,
     BACKEND_PUBLIC_URL: BACKEND_PUBLIC_URL.replace(/\/+$/, ""),
     FRONTEND_URL: FRONTEND_URL.replace(/\/+$/, ""),
   };
 };
 
-/**
- * @swagger
- * /api/payu/initiate:
- *   post:
- *     summary: Initiate a secure PayU transaction session token
- *     description: Aggregates subtotal values, validates configuration keys, handles pricing validations, and computes secure transaction hash keys. Requires customer bearer token authorization signatures.
- *     tags: [PayU Payments]
- *     security:
- *       - BearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - checkoutId
- *             properties:
- *               checkoutId:
- *                 type: string
- *                 description: Unique basket tracking reference key parameters string
- *                 example: "KTJ-CHECKOUT-88192"
- *     responses:
- *       200:
- *         description: Cryptographic checkout session payload prepared smoothly.
- *       400:
- *         description: Bad request - Missing target identifiers or order total amounts evaluate invalid indices.
- *       404:
- *         description: Not Found - Matching active checkout transaction record missing.
- *       500:
- *         description: Internal server fault.
- */
 router.post("/initiate", protect, async (req, res) => {
   try {
     const config = getConfig();
@@ -130,7 +88,7 @@ router.post("/initiate", protect, async (req, res) => {
 
     const totalPaise = amounts.reduce(
       (sum, amount) => sum + Math.round(amount * 100),
-      0
+      0,
     );
 
     if (!Number.isSafeInteger(totalPaise) || totalPaise <= 0) {
@@ -144,14 +102,17 @@ router.post("/initiate", protect, async (req, res) => {
     const userEmail = req.user.email;
     const phone = orders[0].phone;
 
-    const firstname = String(req.user.name || req.user.firstName || "KTJ Customer")
+    const firstname = String(
+      req.user.name || req.user.firstName || "KTJ Customer",
+    )
       .trim()
       .slice(0, 60);
 
     if (!userEmail || !phone) {
       return res.status(400).json({
         success: false,
-        message: "Your account must have an email and checkout phone number for PayU.",
+        message:
+          "Your account must have an email and checkout phone number for PayU.",
       });
     }
 
@@ -213,7 +174,7 @@ router.post("/initiate", protect, async (req, res) => {
         _id: { $in: orders.map((order) => order._id) },
         paymentStatus: "PENDING",
       },
-      { $set: { paymentTransactionId: txnid } }
+      { $set: { paymentTransactionId: txnid } },
     );
 
     return res.status(200).json({
@@ -233,23 +194,6 @@ router.post("/initiate", protect, async (req, res) => {
   }
 });
 
-/**
- * @swagger
- * /api/payu/callback:
- *   post:
- *     summary: Receive and decode incoming merchant callback post signals from PayU
- *     description: Decodes incoming URL-encoded payment data, verifies the signature using the merchant salt, checks amounts, and updates the database order status. Redirects back to the React orders dashboard.
- *     tags: [PayU Payments]
- *     responses:
- *       200:
- *         description: Transaction record processed and customer rerouted back safely.
- *       400:
- *         description: Bad Request - Verification hash signature mismatch or data field attributes corrupt.
- *       404:
- *         description: Not Found - Transaction identifier tracking key mapping record missing.
- *       500:
- *         description: Internal runtime callback parsing fault.
- */
 router.post("/callback", async (req, res) => {
   try {
     const p = req.body || {};
@@ -295,7 +239,7 @@ router.post("/callback", async (req, res) => {
 
     const expectedPaise = orders.reduce(
       (sum, order) => sum + Math.round(Number(order.totalAmount) * 100),
-      0
+      0,
     );
 
     const receivedPaise = Math.round(Number(p.amount) * 100);
@@ -317,7 +261,7 @@ router.post("/callback", async (req, res) => {
           paymentMethod: "ONLINE",
           paymentStatus: "PENDING",
         },
-        { $set: { paymentStatus: "PAID" } }
+        { $set: { paymentStatus: "PAID" } },
       );
     } else {
       await Order.updateMany(
@@ -326,12 +270,12 @@ router.post("/callback", async (req, res) => {
           paymentMethod: "ONLINE",
           paymentStatus: "PENDING",
         },
-        { $set: { paymentStatus: "FAILED" } }
+        { $set: { paymentStatus: "FAILED" } },
       );
     }
 
     return res.redirect(
-      `${FRONTEND_URL}/orders?payment=${paymentSucceeded ? "success" : "failed"}`
+      `${FRONTEND_URL}/orders?payment=${paymentSucceeded ? "success" : "failed"}`,
     );
   } catch (error) {
     console.error("[PAYU] Callback failed:", {
