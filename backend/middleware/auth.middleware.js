@@ -1,6 +1,6 @@
-
 import jwt from "jsonwebtoken";
 import User from "../models/user.model.js";
+import { JWT_SECRET } from "../config/env.js";
 
 const getUserRoles = (user) => {
   if (!user) return [];
@@ -30,10 +30,7 @@ export const protect = async (req, res, next) => {
       });
     }
 
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET || "secretkey123"
-    );
+    const decoded = jwt.verify(token, JWT_SECRET);
 
     const user = await User.findById(decoded.id).select("-password");
 

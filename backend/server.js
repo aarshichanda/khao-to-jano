@@ -1,4 +1,3 @@
-
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
@@ -7,6 +6,7 @@ import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 
 import connectDB from "./config/db.js";
+import { JWT_SECRET } from "./config/env.js";
 import User from "./models/user.model.js";
 import Restaurant from "./models/restaurant.model.js";
 
@@ -30,19 +30,27 @@ const PORT = process.env.PORT || 5000;
 const allowedOrigins = [
   "http://localhost:5173",
   "http://127.0.0.1:5173",
-  "https://vercel.app", 
+  "https://vercel.app",
   process.env.FRONTEND_URL,
 ].filter(Boolean);
 
-
 const corsOptions = {
-  origin: allowedOrigins,
+  // Reflect only known-good origins. Requests without an Origin header
+  // (server-to-server, curl, health checks) are allowed through.
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`Origin not allowed by CORS: ${origin}`));
+  },
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true,
 };
 
-
-app.use(cors({ origin: true, credentials: true }));
+// Apply the same origin policy to both HTTP and Socket.IO.
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
@@ -60,10 +68,7 @@ io.use(async (socket, next) => {
       return next(new Error("Authentication required."));
     }
 
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET || "secretkey123"
-    );
+    const decoded = jwt.verify(token, JWT_SECRET);
 
     const user = await User.findById(decoded.id).select("_id role roles");
 
@@ -83,9 +88,7 @@ io.use(async (socket, next) => {
       }).select("_id");
 
       if (!restaurant) {
-        return next(
-          new Error("No active restaurant linked to this owner.")
-        );
+        return next(new Error("No active restaurant linked to this owner."));
       }
 
       socket.data.restaurantId = restaurant._id.toString();
@@ -114,7 +117,7 @@ io.on("connection", (socket) => {
   }
 
   console.log(
-    `Socket connected: user ${socket.data.userId}, roles ${socket.data.roles.join(",")}`
+    `Socket connected: user ${socket.data.userId}, roles ${socket.data.roles.join(",")}`,
   );
 
   socket.on("disconnect", () => {

@@ -1,181 +1,10 @@
-
 import express from "express";
 import mongoose from "mongoose";
 import { randomUUID } from "node:crypto";
 import { protect } from "../middleware/auth.middleware.js";
 import Order from "../models/order.model.js";
 import Restaurant from "../models/restaurant.model.js";
-
-/**
- * @swagger
- * tags:
- *   name: Orders
- *   description: Customer checkout engines, order tracking workflows, and multi-restaurant transaction models
- */
-
-/**
- * @swagger
- * /api/orders:
- *   post:
- *     summary: Create new food marketplace orders (Supports multi-restaurant checkouts)
- *     description: Instantiates and processes cart selections. For 'COD', Socket.IO triggers are immediately fired to restaurant owners. For 'ONLINE', orders pause in 'PENDING' state until external webhook verification passes. Requires a bearer token.
- *     tags: [Orders]
- *     security:
- *       - BearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - deliveryAddress
- *               - phone
- *               - paymentMethod
- *             properties:
- *               restaurant:
- *                 type: string
- *                 description: Main target restaurant ObjectId (Used for single restaurant checkout format)
- *                 example: 65cb1a8b9f1d2c001f4a5678
- *               items:
- *                 type: array
- *                 description: Cart selections for the single restaurant format
- *                 items:
- *                   type: object
- *                   properties:
- *                     dishId:
- *                       type: string
- *                       example: 65cb1a8b9f1d2c001f4a5699
- *                     quantity:
- *                       type: integer
- *                       example: 2
- *               restaurants:
- *                 type: array
- *                 description: Advanced multi-restaurant structure (Overrides single fields if provided)
- *                 items:
- *                   type: object
- *                   properties:
- *                     restaurant:
- *                       type: string
- *                       example: 65cb1a8b9f1d2c001f4a5678
- *                     items:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           dishId:
- *                             type: string
- *                             example: 65cb1a8b9f1d2c001f4a5699
- *                           quantity:
- *                             type: integer
- *                             example: 2
- *               deliveryAddress:
- *                 type: object
- *                 required:
- *                   - street
- *                   - city
- *                   - state
- *                   - postalCode
- *                 properties:
- *                   street:
- *                     type: string
- *                     example: "12, Park Street, Flat 3B"
- *                   city:
- *                     type: string
- *                     example: "Kolkata"
- *                   state:
- *                     type: string
- *                     example: "West Bengal"
- *                   postalCode:
- *                     type: string
- *                     example: "700016"
- *               phone:
- *                 type: string
- *                 example: "+919830012345"
- *               paymentMethod:
- *                 type: string
- *                 enum: [COD, ONLINE]
- *                 example: COD
- *               couponCode:
- *                 type: string
- *                 description: Optional coupon code to apply. Supported codes include 'FIRST50'.
- *                 example: FIRST50
- *     responses:
- *       201:
- *         description: Checkout structure created successfully. Returns combined order details.
- *       400:
- *         description: Bad request - Missing target identifiers, unavailable dishes, or malformed payloads
- *       401:
- *         description: Unauthorized - Authentication token missing or user profile invalid
- *       404:
- *         description: Target restaurant not found or currently inactive
- *       500:
- *         description: Internal runtime server fault
- */
-
-/**
- * @swagger
- * /api/orders:
- *   get:
- *     summary: Retrieve history of orders belonging to the authenticated customer
- *     description: Fetches all platform orders matching the caller's secure identity footprint, sorted descending by compilation date. Requires a bearer token.
- *     tags: [Orders]
- *     security:
- *       - BearerAuth: []
- *     responses:
- *       200:
- *         description: History log fetched successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 count:
- *                   type: integer
- *                   example: 1
- *                 orders:
- *                   type: array
- *                   items:
- *                     type: object
- *       401:
- *         description: Unauthorized - Bearer verification failed
- *       500:
- *         description: Internal server error
- */
-
-/**
- * @swagger
- * /api/orders/{id}:
- *   get:
- *     summary: Fetch granular tracking metrics for a single explicit customer order
- *     description: Restricts access dynamically, ensuring clients can only pull metrics for records they personally placed. Requires a bearer token.
- *     tags: [Orders]
- *     security:
- *       - BearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: Unique 24-character hexadecimal MongoDB ObjectId of the target order record
- *         example: 65cc2b9c8e1f3a002b5c6789
- *     responses:
- *       200:
- *         description: Granular order object retrieved successfully
- *       400:
- *         description: Invalid order ID syntax structure
- *       401:
- *         description: Unauthorized - Bearer token tracking failed
- *       404:
- *         description: Target order document not found for this client profile
- *       500:
- *         description: Internal runtime engine crash
- */
-
+import Coupon from "../models/coupon.model.js";
 
 const router = express.Router();
 
@@ -184,21 +13,54 @@ const validId = (id) => {
   return mongoose.Types.ObjectId.isValid(id.trim());
 };
 
-const calculateCouponDiscount = (couponCode, subtotal) => {
+// Validate a coupon against the database and compute its discount.
+// Mirrors POST /api/coupons/validate so a single source of truth governs
+// which codes exist, their type, caps, expiry, and minimum order amount.
+const calculateCouponDiscount = async (couponCode, subtotal) => {
   if (!couponCode) {
     return { valid: true, discount: 0 };
   }
 
-  if (couponCode !== "FIRST50") {
+  const coupon = await Coupon.findOne({ code: couponCode });
+
+  if (!coupon) {
+    return { valid: false, message: "Invalid coupon code." };
+  }
+
+  if (!coupon.isActive) {
+    return { valid: false, message: "This coupon is no longer active." };
+  }
+
+  if (coupon.expiryDate && new Date(coupon.expiryDate) < new Date()) {
+    return { valid: false, message: "This coupon has expired." };
+  }
+
+  if (subtotal < coupon.minOrderAmount) {
     return {
       valid: false,
-      message: "Invalid coupon code.",
+      message: `Minimum order amount of ₹${coupon.minOrderAmount} required for this coupon.`,
     };
   }
 
+  let discount =
+    coupon.discountType === "flat"
+      ? coupon.discountValue
+      : (subtotal * coupon.discountValue) / 100;
+
+  if (
+    coupon.discountType === "percentage" &&
+    coupon.maxDiscountAmount &&
+    discount > coupon.maxDiscountAmount
+  ) {
+    discount = coupon.maxDiscountAmount;
+  }
+
+  // Never discount more than the order itself.
+  discount = Math.min(discount, subtotal);
+
   return {
     valid: true,
-    discount: Math.round(Math.min(50, subtotal * 0.1) * 100) / 100,
+    discount: Math.round(discount * 100) / 100,
   };
 };
 
@@ -247,7 +109,7 @@ router.post("/", protect, async (req, res) => {
         (group) =>
           !validId(group?.restaurant) ||
           !Array.isArray(group.items) ||
-          group.items.length === 0
+          group.items.length === 0,
       )
     ) {
       console.error("[ORDER] Invalid restaurant groups", groups);
@@ -260,7 +122,7 @@ router.post("/", protect, async (req, res) => {
     }
 
     const restaurantIds = groups.map((group) =>
-      String(group.restaurant).trim()
+      String(group.restaurant).trim(),
     );
 
     if (new Set(restaurantIds).size !== restaurantIds.length) {
@@ -303,7 +165,7 @@ router.post("/", protect, async (req, res) => {
       restaurantDocuments.map((restaurant) => [
         restaurant._id.toString(),
         restaurant,
-      ])
+      ]),
     );
 
     if (restaurantsById.size !== groups.length) {
@@ -328,9 +190,7 @@ router.post("/", protect, async (req, res) => {
     const normalizedCoupon = couponCode.trim().toUpperCase();
 
     const normalizedGroups = groups.map((group) => {
-      const restaurant = restaurantsById.get(
-        String(group.restaurant).trim()
-      );
+      const restaurant = restaurantsById.get(String(group.restaurant).trim());
 
       const normalizedItems = [];
 
@@ -341,7 +201,7 @@ router.post("/", protect, async (req, res) => {
         if (!validId(dishId)) {
           throw Object.assign(
             new Error("Every cart item must have a valid menu-item ID."),
-            { statusCode: 400 }
+            { statusCode: 400 },
           );
         }
 
@@ -350,16 +210,16 @@ router.post("/", protect, async (req, res) => {
         if (!dish) {
           throw Object.assign(
             new Error(
-              `Dish ID ${dishId} does not belong to restaurant ${restaurant.name}.`
+              `Dish ID ${dishId} does not belong to restaurant ${restaurant.name}.`,
             ),
-            { statusCode: 400 }
+            { statusCode: 400 },
           );
         }
 
         if (dish.isAvailable === false) {
           throw Object.assign(
             new Error(`${dish.name} is currently unavailable.`),
-            { statusCode: 400 }
+            { statusCode: 400 },
           );
         }
 
@@ -368,7 +228,7 @@ router.post("/", protect, async (req, res) => {
         if (!Number.isSafeInteger(quantity) || quantity < 1) {
           throw Object.assign(
             new Error("Each item must have a valid positive quantity."),
-            { statusCode: 400 }
+            { statusCode: 400 },
           );
         }
 
@@ -384,8 +244,8 @@ router.post("/", protect, async (req, res) => {
         Math.round(
           normalizedItems.reduce(
             (sum, item) => sum + item.price * item.quantity,
-            0
-          ) * 100
+            0,
+          ) * 100,
         ) / 100;
 
       return {
@@ -398,12 +258,12 @@ router.post("/", protect, async (req, res) => {
 
     const combinedSubtotal = normalizedGroups.reduce(
       (sum, group) => sum + group.subtotal,
-      0
+      0,
     );
 
-    const couponResult = calculateCouponDiscount(
+    const couponResult = await calculateCouponDiscount(
       normalizedCoupon,
-      combinedSubtotal
+      combinedSubtotal,
     );
 
     if (!couponResult.valid) {
@@ -418,10 +278,7 @@ router.post("/", protect, async (req, res) => {
     let remainingDiscount = couponResult.discount;
 
     const orderDocuments = normalizedGroups.map((group) => {
-      const discountAmount = Math.min(
-        remainingDiscount,
-        group.subtotal
-      );
+      const discountAmount = Math.min(remainingDiscount, group.subtotal);
 
       remainingDiscount =
         Math.round((remainingDiscount - discountAmount) * 100) / 100;
@@ -429,8 +286,8 @@ router.post("/", protect, async (req, res) => {
       const totalAmount = Math.max(
         0,
         Math.round(
-          (group.subtotal + group.deliveryCharge - discountAmount) * 100
-        ) / 100
+          (group.subtotal + group.deliveryCharge - discountAmount) * 100,
+        ) / 100,
       );
 
       return {
@@ -459,9 +316,7 @@ router.post("/", protect, async (req, res) => {
     console.log("[ORDER] Saving orders", {
       checkoutId,
       count: orderDocuments.length,
-      restaurantIds: orderDocuments.map((order) =>
-        order.restaurant.toString()
-      ),
+      restaurantIds: orderDocuments.map((order) => order.restaurant.toString()),
     });
 
     // Insert all restaurant orders.
@@ -480,18 +335,14 @@ router.post("/", protect, async (req, res) => {
 
     if (io && paymentMethod === "COD") {
       for (const order of createdOrders) {
-        io.to(`restaurant:${order.restaurant.toString()}`).emit(
-          "new-order",
-          { orderId: order._id.toString() }
-        );
+        io.to(`restaurant:${order.restaurant.toString()}`).emit("new-order", {
+          orderId: order._id.toString(),
+        });
 
-        io.to(`customer:${req.user._id.toString()}`).emit(
-          "order-updated",
-          {
-            orderId: order._id.toString(),
-            orderStatus: order.orderStatus,
-          }
-        );
+        io.to(`customer:${req.user._id.toString()}`).emit("order-updated", {
+          orderId: order._id.toString(),
+          orderStatus: order.orderStatus,
+        });
       }
 
       io.to("admins").emit("order-updated", {
