@@ -1,3 +1,4 @@
+
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
@@ -35,8 +36,6 @@ const allowedOrigins = [
 ].filter(Boolean);
 
 const corsOptions = {
-  // Reflect only known-good origins. Requests without an Origin header
-  // (server-to-server, curl, health checks) are allowed through.
   origin: (origin, callback) => {
     if (!origin || allowedOrigins.includes(origin)) {
       return callback(null, true);
@@ -49,12 +48,34 @@ const corsOptions = {
   credentials: true,
 };
 
-// Apply the same origin policy to both HTTP and Socket.IO.
-app.use(cors(corsOptions));
+const corsMiddleware = cors(corsOptions);
+
+// PayU submits its callback as a cross-origin form POST.
+// Its Origin can be "null", so skip browser CORS checks
+// exclusively for this endpoint. Payment authenticity is
+// verified inside payu.routes.js using PayU hash verification
+// and server-side transaction verification.
+app.use((req, res, next) => {
+  if (
+    req.method === "POST" &&
+    req.path === "/api/payu/callback"
+  ) {
+    return next();
+  }
+
+  return corsMiddleware(req, res, next);
+});
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
-app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
+app.use(
+  "/api-docs",
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerSpec),
+);
+
+// Apply the normal origin policy to Socket.IO.
 const io = new Server(httpServer, {
   cors: corsOptions,
 });
@@ -77,8 +98,12 @@ io.use(async (socket, next) => {
     }
 
     socket.data.userId = user._id.toString();
+
     socket.data.roles = [
-      ...new Set([...(user.roles || []), user.role].filter(Boolean)),
+      ...new Set([
+        ...(user.roles || []),
+        user.role,
+      ].filter(Boolean)),
     ];
 
     if (socket.data.roles.includes("restaurant_owner")) {
@@ -88,7 +113,9 @@ io.use(async (socket, next) => {
       }).select("_id");
 
       if (!restaurant) {
-        return next(new Error("No active restaurant linked to this owner."));
+        return next(
+          new Error("No active restaurant linked to this owner."),
+        );
       }
 
       socket.data.restaurantId = restaurant._id.toString();

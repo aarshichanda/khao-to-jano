@@ -1,8 +1,11 @@
+
 import express from "express";
 import mongoose from "mongoose";
 import { protect } from "../middleware/auth.middleware.js";
 import Restaurant from "../models/restaurant.model.js";
 import Order from "../models/order.model.js";
+import upload from "../middleware/upload.middleware.js";
+import uploadToCloudinary from "../utils/cloudinaryUpload.js";
 
 const router = express.Router();
 
@@ -40,6 +43,7 @@ const getOwnerRestaurant = async (req, res) => {
   return restaurant;
 };
 
+// Owner dashboard
 router.get("/dashboard", async (req, res) => {
   try {
     const restaurant = await getOwnerRestaurant(req, res);
@@ -80,6 +84,9 @@ router.get("/dashboard", async (req, res) => {
           name: restaurant.name,
           address: restaurant.address,
           cuisine: restaurant.cuisine,
+          image: restaurant.image || "",
+          imagePublicId: restaurant.imagePublicId || "",
+          menu: restaurant.menu || [],
         },
         metrics: {
           activeOrders,
@@ -98,6 +105,7 @@ router.get("/dashboard", async (req, res) => {
   }
 });
 
+// Get restaurant orders
 router.get("/orders", async (req, res) => {
   try {
     const restaurant = await getOwnerRestaurant(req, res);
@@ -124,6 +132,7 @@ router.get("/orders", async (req, res) => {
   }
 });
 
+// Update order status
 router.patch("/orders/:id/status", async (req, res) => {
   try {
     if (!mongoose.isValidObjectId(req.params.id)) {
@@ -210,5 +219,104 @@ router.patch("/orders/:id/status", async (req, res) => {
     });
   }
 });
+
+// Upload restaurant profile image
+router.patch("/restaurant/image", upload.single("image"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "Please select an image.",
+      });
+    }
+
+    const restaurant = await getOwnerRestaurant(req, res);
+    if (!restaurant) return;
+
+    const uploadedImage = await uploadToCloudinary(
+      req.file.buffer,
+      "khao-to-jano/restaurants"
+    );
+
+    restaurant.image = uploadedImage.url;
+    restaurant.imagePublicId = uploadedImage.publicId;
+
+    await restaurant.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Restaurant image uploaded successfully.",
+      image: restaurant.image,
+    });
+  } catch (error) {
+    console.error("Restaurant image upload error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to upload restaurant image.",
+    });
+  }
+});
+
+// Upload menu item image
+router.patch(
+  "/menu/:menuItemId/image",
+  upload.single("image"),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          message: "Please select an image.",
+        });
+      }
+
+      const { menuItemId } = req.params;
+
+      if (!mongoose.isValidObjectId(menuItemId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid menu item ID.",
+        });
+      }
+
+      const restaurant = await getOwnerRestaurant(req, res);
+      if (!restaurant) return;
+
+      const menuItem = restaurant.menu.id(menuItemId);
+
+      if (!menuItem) {
+        return res.status(404).json({
+          success: false,
+          message: "Menu item not found in your restaurant.",
+        });
+      }
+
+      const uploadedImage = await uploadToCloudinary(
+        req.file.buffer,
+        "khao-to-jano/menu-items"
+      );
+
+      menuItem.image = uploadedImage.url;
+      menuItem.imagePublicId = uploadedImage.publicId;
+
+      await restaurant.save();
+
+      return res.status(200).json({
+        success: true,
+        message: "Menu item image uploaded successfully.",
+        image: menuItem.image,
+        menuItemId: menuItem._id,
+      });
+    } catch (error) {
+      console.error("Menu item image upload error:", error);
+
+      return res.status(500).json({
+        success: false,
+        message: "Failed to upload menu item image.",
+      });
+    }
+  }
+);
 
 export default router;

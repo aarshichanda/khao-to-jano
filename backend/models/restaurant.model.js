@@ -1,4 +1,3 @@
-
 import mongoose from "mongoose";
 
 const menuItemSchema = new mongoose.Schema(
@@ -21,6 +20,14 @@ const menuItemSchema = new mongoose.Schema(
     isAvailable: {
       type: Boolean,
       default: true,
+    },
+    image: {
+      type: String,
+      default: "",
+    },
+    imagePublicId: {
+      type: String,
+      default: "",
     },
   },
   { timestamps: true }
@@ -48,6 +55,10 @@ const restaurantSchema = new mongoose.Schema(
       type: String,
       default: "",
       trim: true,
+    },
+    imagePublicId: {
+      type: String,
+      default: "",
     },
     cuisine: {
       type: [String],

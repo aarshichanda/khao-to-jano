@@ -6,6 +6,54 @@ import { clearCart } from "../redux/cartSlice";
 import API_BASE_URL from "../api";
 
 const API_BASE = API_BASE_URL;
+const CHECKOUT_ATTEMPT_STORAGE_KEY = "ktj_checkout_attempt";
+
+const createIdempotencyKey = () => {
+  if (globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID();
+  }
+
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
+
+  return Array.from(bytes, (byte) =>
+    byte.toString(16).padStart(2, "0")
+  ).join("");
+};
+
+const getCheckoutIdempotencyKey = (fingerprint) => {
+  try {
+    const storedAttempt = sessionStorage.getItem(
+      CHECKOUT_ATTEMPT_STORAGE_KEY
+    );
+
+    if (storedAttempt) {
+      const parsedAttempt = JSON.parse(storedAttempt);
+
+      if (
+        parsedAttempt.fingerprint === fingerprint &&
+        typeof parsedAttempt.key === "string" &&
+        parsedAttempt.key
+      ) {
+        return parsedAttempt.key;
+      }
+    }
+
+    const key = createIdempotencyKey();
+
+    sessionStorage.setItem(
+      CHECKOUT_ATTEMPT_STORAGE_KEY,
+      JSON.stringify({ fingerprint, key })
+    );
+
+    return key;
+  } catch (error) {
+    console.error("Could not access checkout session storage:", error);
+    throw new Error(
+      "Could not prepare a secure checkout attempt. Please refresh the page and try again."
+    );
+  }
+};
 
 function Checkout() {
   const cartItems = useSelector((state) => state.cart.items);
@@ -178,9 +226,28 @@ function Checkout() {
       })
     );
 
+    const checkoutPayload = {
+      restaurants,
+      deliveryAddress: {
+        street: address.trim(),
+        city: city.trim(),
+        state: state.trim(),
+        postalCode: pincode.trim(),
+      },
+      phone: phone.trim(),
+      paymentMethod,
+      couponCode: couponSuccess ? couponCode.trim().toUpperCase() : "",
+    };
+
+    const checkoutFingerprint = JSON.stringify(checkoutPayload);
+
     setIsSubmitting(true);
 
     try {
+      const idempotencyKey = getCheckoutIdempotencyKey(
+        checkoutFingerprint
+      );
+
       const response = await fetch(`${API_BASE}/api/orders`, {
         method: "POST",
         headers: {
@@ -188,16 +255,8 @@ function Checkout() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          restaurants,
-          deliveryAddress: {
-            street: address.trim(),
-            city: city.trim(),
-            state: state.trim(),
-            postalCode: pincode.trim(),
-          },
-          phone: phone.trim(),
-          paymentMethod,
-          couponCode: couponSuccess ? couponCode.trim().toUpperCase() : "",
+          ...checkoutPayload,
+          idempotencyKey,
         }),
       });
 
@@ -273,6 +332,8 @@ function Checkout() {
         (sum, order) => sum + Number(order.totalAmount || 0),
         0
       );
+
+      sessionStorage.removeItem(CHECKOUT_ATTEMPT_STORAGE_KEY);
 
       dispatch(clearCart());
 

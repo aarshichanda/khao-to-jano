@@ -1,10 +1,13 @@
+
 import express from "express";
 import mongoose from "mongoose";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { protect } from "../middleware/auth.middleware.js";
 import Order from "../models/order.model.js";
 import Restaurant from "../models/restaurant.model.js";
 import Coupon from "../models/coupon.model.js";
+import validate from "../middleware/validate.middleware.js";
+import { orderSchema } from "../validators/order.validator.js";
 
 const router = express.Router();
 
@@ -65,9 +68,11 @@ const calculateCouponDiscount = async (couponCode, subtotal) => {
 };
 
 // POST /api/orders — Create one order per restaurant.
-router.post("/", protect, async (req, res) => {
+router.post("/", protect, validate(orderSchema), async (req, res) => {
   let checkoutId;
   let createdOrders = [];
+  let idempotencyKey;
+  let requestHash;
 
   try {
     console.log("[ORDER] Request received", {
@@ -89,6 +94,19 @@ router.post("/", protect, async (req, res) => {
       return res.status(401).json({
         success: false,
         message: "Authenticated customer not found.",
+      });
+    }
+
+    // Validate the checkout idempotency key.
+    idempotencyKey =
+      typeof req.body?.idempotencyKey === "string"
+        ? req.body.idempotencyKey.trim()
+        : "";
+
+    if (!idempotencyKey || idempotencyKey.length > 100) {
+      return res.status(400).json({
+        success: false,
+        message: "A valid checkout idempotency key is required.",
       });
     }
 
@@ -189,8 +207,86 @@ router.post("/", protect, async (req, res) => {
 
     const normalizedCoupon = couponCode.trim().toUpperCase();
 
+    // Build a fingerprint of the checkout request.
+    const requestFingerprint = {
+      restaurants: groups.map((group) => ({
+        restaurant: String(group.restaurant).trim(),
+        items: group.items.map((item) => ({
+          dishId:
+            typeof item?.dishId === "string"
+              ? item.dishId.trim()
+              : "",
+          quantity: Number(item?.quantity),
+        })),
+      })),
+      deliveryAddress: {
+        street: deliveryAddress.street.trim(),
+        city: deliveryAddress.city.trim(),
+        state: deliveryAddress.state.trim(),
+        postalCode: deliveryAddress.postalCode.trim(),
+      },
+      phone: phone.trim(),
+      paymentMethod,
+      couponCode: normalizedCoupon,
+    };
+
+    requestHash = createHash("sha256")
+      .update(JSON.stringify(requestFingerprint))
+      .digest("hex");
+
+    // Return the existing orders if this checkout attempt was already saved.
+    const existingOrders = await Order.find({
+      customer: req.user._id,
+      idempotencyKey,
+    }).sort({ createdAt: 1 });
+
+    if (existingOrders.length > 0) {
+      const existingRestaurants = new Set(
+        existingOrders.map((order) => order.restaurant.toString()),
+      );
+
+      const expectedRestaurants = new Set(restaurantIds);
+
+      const sameRestaurants =
+        existingRestaurants.size === expectedRestaurants.size &&
+        [...expectedRestaurants].every((id) =>
+          existingRestaurants.has(id),
+        );
+
+      const sameRequest = existingOrders.every(
+        (order) => order.requestHash === requestHash,
+      );
+
+      if (!sameRequest) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "This checkout key has already been used with different order details. Start a new checkout attempt.",
+        });
+      }
+
+      if (!sameRestaurants || existingOrders.length !== groups.length) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "This checkout is already being processed. Please retry shortly using the same checkout attempt.",
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: "Existing checkout retrieved. No duplicate orders created.",
+        checkoutId: existingOrders[0].checkoutId,
+        orders: existingOrders,
+        order: existingOrders[0],
+        idempotentReplay: true,
+      });
+    }
+
     const normalizedGroups = groups.map((group) => {
-      const restaurant = restaurantsById.get(String(group.restaurant).trim());
+      const restaurant = restaurantsById.get(
+        String(group.restaurant).trim(),
+      );
 
       const normalizedItems = [];
 
@@ -278,7 +374,10 @@ router.post("/", protect, async (req, res) => {
     let remainingDiscount = couponResult.discount;
 
     const orderDocuments = normalizedGroups.map((group) => {
-      const discountAmount = Math.min(remainingDiscount, group.subtotal);
+      const discountAmount = Math.min(
+        remainingDiscount,
+        group.subtotal,
+      );
 
       remainingDiscount =
         Math.round((remainingDiscount - discountAmount) * 100) / 100;
@@ -292,6 +391,8 @@ router.post("/", protect, async (req, res) => {
 
       return {
         checkoutId,
+        idempotencyKey,
+        requestHash,
         customer: req.user._id,
         restaurant: group.restaurant._id,
         items: group.items,
@@ -316,7 +417,9 @@ router.post("/", protect, async (req, res) => {
     console.log("[ORDER] Saving orders", {
       checkoutId,
       count: orderDocuments.length,
-      restaurantIds: orderDocuments.map((order) => order.restaurant.toString()),
+      restaurantIds: orderDocuments.map((order) =>
+        order.restaurant.toString(),
+      ),
     });
 
     // Insert all restaurant orders.
@@ -368,6 +471,71 @@ router.post("/", protect, async (req, res) => {
       statusCode: error.statusCode,
       stack: error.stack,
     });
+
+    // Recover an existing checkout after a MongoDB duplicate-key error.
+    if (error.code === 11000 && idempotencyKey) {
+      try {
+        const duplicateOrders = await Order.find({
+          customer: req.user._id,
+          idempotencyKey,
+        }).sort({ createdAt: 1 });
+
+        const expectedRestaurantIds = Array.isArray(req.body?.restaurants)
+          ? req.body.restaurants.map((group) =>
+              String(group.restaurant).trim(),
+            )
+          : [String(req.body?.restaurant).trim()];
+
+        const actualRestaurantIds = duplicateOrders.map((order) =>
+          order.restaurant.toString(),
+        );
+
+        const expectedRestaurants = new Set(expectedRestaurantIds);
+        const actualRestaurants = new Set(actualRestaurantIds);
+
+        const sameRestaurants =
+          duplicateOrders.length === expectedRestaurantIds.length &&
+          actualRestaurants.size === expectedRestaurants.size &&
+          [...expectedRestaurants].every((id) =>
+            actualRestaurants.has(id),
+          );
+
+        const sameRequest =
+          duplicateOrders.length > 0 &&
+          duplicateOrders.every(
+            (order) => order.requestHash === requestHash,
+          );
+
+        const sameCheckout =
+          duplicateOrders.length > 0 &&
+          duplicateOrders.every(
+            (order) =>
+              order.checkoutId === duplicateOrders[0].checkoutId,
+          );
+
+        if (sameRequest && sameRestaurants && sameCheckout) {
+          return res.status(200).json({
+            success: true,
+            message: "Existing checkout retrieved. No duplicate orders created.",
+            checkoutId: duplicateOrders[0].checkoutId,
+            orders: duplicateOrders,
+            order: duplicateOrders[0],
+            idempotentReplay: true,
+          });
+        }
+
+        return res.status(409).json({
+          success: false,
+          message:
+            "This checkout is already being processed. Please retry using the same checkout attempt.",
+        });
+      } catch (duplicateError) {
+        console.error(
+          "[ORDER] Duplicate checkout recovery failed:",
+          duplicateError.message,
+        );
+      }
+    }
 
     if (checkoutId && createdOrders.length === 0) {
       try {

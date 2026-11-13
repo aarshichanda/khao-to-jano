@@ -263,6 +263,35 @@ router.post("/callback", async (req, res) => {
         },
         { $set: { paymentStatus: "PAID" } },
       );
+
+      // Payment is now verified — notify the restaurant owner(s),
+      // the customer, and admins in real time. This mirrors the
+      // COD flow in order.routes.js, which was the only path that
+      // previously emitted socket events.
+      const io = req.app.get("io");
+
+      if (io) {
+        const customerId = orders[0].customer.toString();
+
+        for (const order of orders) {
+          io.to(`restaurant:${order.restaurant.toString()}`).emit(
+            "new-order",
+            { orderId: order._id.toString() },
+          );
+        }
+
+        io.to(`customer:${customerId}`).emit("order-updated", {
+          orderId: orders[0]._id.toString(),
+          orderStatus: orders[0].orderStatus,
+          paymentStatus: "PAID",
+        });
+
+        io.to("admins").emit("order-updated", {
+          checkoutId: orders[0].checkoutId,
+          orderStatus: "PLACED",
+          paymentStatus: "PAID",
+        });
+      }
     } else {
       await Order.updateMany(
         {

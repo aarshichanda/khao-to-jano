@@ -8,7 +8,16 @@ const orderSchema = new mongoose.Schema(
       index: true,
       sparse: true,
     },
+    idempotencyKey: {
+    type: String,
+    trim: true,
+   default: undefined,
+   },
 
+  requestHash: {
+  type: String,
+  default: undefined,
+  },
     customer: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -93,6 +102,21 @@ const orderSchema = new mongoose.Schema(
     },
   },
   { timestamps: true }
+);
+
+  orderSchema.index(
+  {
+    customer: 1,
+    idempotencyKey: 1,
+    restaurant: 1,
+  },
+  {
+    unique: true,
+    partialFilterExpression: {
+      idempotencyKey: { $type: "string" },
+    },
+    name: "unique_customer_checkout_restaurant",
+  }
 );
 
 const Order = mongoose.model("Order", orderSchema);

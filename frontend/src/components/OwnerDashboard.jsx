@@ -68,6 +68,10 @@ function OwnerDashboard() {
   const [updatingOrderId, setUpdatingOrderId] = useState(null);
   const [actionError, setActionError] = useState("");
   const [actionMessage, setActionMessage] = useState("");
+  const [uploadingRestaurantImage, setUploadingRestaurantImage] = useState(false);
+  const [uploadingMenuItemId, setUploadingMenuItemId] = useState(null);
+  const [uploadError, setUploadError] = useState("");
+  const [uploadMessage, setUploadMessage] = useState("");
 
   const [restaurants, setRestaurants] = useState([]);
   const [restaurantsLoading, setRestaurantsLoading] = useState(true);
@@ -200,6 +204,78 @@ function OwnerDashboard() {
 
     return () => socket.disconnect();
   }, [loadDashboard]);
+
+  const uploadImage = async (file, endpoint, setUploading) => {
+    if (!file) return;
+
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+
+    if (!allowedTypes.includes(file.type)) {
+      setUploadError("Choose a JPG, PNG, or WEBP image.");
+      setUploadMessage("");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setUploadError("Image size must not exceed 5 MB.");
+      setUploadMessage("");
+      return;
+    }
+
+    const token = getToken();
+
+    if (!token) {
+      setUploadError("Session expired. Please log in again.");
+      setUploadMessage("");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("image", file);
+
+    setUploading(true);
+    setUploadError("");
+    setUploadMessage("");
+
+    try {
+      const response = await fetch(`${API_URL}${endpoint}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || "Image upload failed.");
+      }
+
+      await fetchDashboard();
+      setUploadMessage(result.message || "Image uploaded successfully.");
+    } catch (err) {
+      setUploadError(err.message || "Unable to upload image.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleRestaurantImageUpload = (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    uploadImage(file, "/restaurant/image", setUploadingRestaurantImage);
+  };
+
+  const handleMenuItemImageUpload = (menuItemId, event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    uploadImage(
+      file,
+      `/menu/${menuItemId}/image`,
+      (isUploading) => setUploadingMenuItemId(isUploading ? menuItemId : null)
+    );
+  };
 
   const updateOrderStatus = async (orderId, orderStatus) => {
     const token = getToken();
@@ -591,6 +667,18 @@ function OwnerDashboard() {
             </div>
           )}
 
+          {uploadMessage && (
+            <div className="owner-alert owner-alert--success" role="status">
+              {uploadMessage}
+            </div>
+          )}
+
+          {uploadError && (
+            <div className="owner-alert owner-alert--error" role="alert">
+              {uploadError}
+            </div>
+          )}
+
           <header className="owner-page-heading">
             <div>
               <p className="owner-eyebrow">
@@ -770,8 +858,17 @@ function OwnerDashboard() {
                   {restaurant?.menu?.length ?? "Not included in dashboard response"}
                 </p>
                 <p className="owner-muted">
-                  This view uses the restaurant linked to your owner account. Editing the profile will be added only after the appropriate protected backend endpoint is defined.
+                  Upload a JPG, PNG, or WEBP image (maximum 5 MB) for your restaurant listing.
                 </p>
+                <label className="owner-image-upload">
+                  {uploadingRestaurantImage ? "Uploading image..." : "Change restaurant image"}
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={handleRestaurantImageUpload}
+                    disabled={uploadingRestaurantImage}
+                  />
+                </label>
               </div>
             </section>
           )}
@@ -792,6 +889,17 @@ function OwnerDashboard() {
                       className="owner-menu-card"
                       key={item._id || item.id || `${item.name}-${index}`}
                     >
+                      {item.image ? (
+                        <img
+                          className="owner-menu-card__image"
+                          src={item.image}
+                          alt={item.name || "Menu item"}
+                        />
+                      ) : (
+                        <div className="owner-menu-card__image owner-image-placeholder">
+                          Image not available
+                        </div>
+                      )}
                       <div>
                         <h3>{item.name || "Unnamed dish"}</h3>
                         <p>{item.description || "No description provided"}</p>
@@ -812,6 +920,19 @@ function OwnerDashboard() {
                           ? "Unavailable"
                           : "Availability not specified"}
                       </span>
+                      <label className="owner-image-upload">
+                        {uploadingMenuItemId === item._id
+                          ? "Uploading image..."
+                          : item.image
+                            ? "Change dish image"
+                            : "Upload dish image"}
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          onChange={(event) => handleMenuItemImageUpload(item._id, event)}
+                          disabled={!item._id || uploadingMenuItemId !== null}
+                        />
+                      </label>
                     </article>
                   ))}
                 </div>

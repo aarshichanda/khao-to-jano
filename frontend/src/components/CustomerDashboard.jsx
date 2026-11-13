@@ -1,7 +1,8 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { API_URL as API_BASE } from "../api";
+import { io } from "socket.io-client";
+import API_BASE_URL, { API_URL as API_BASE } from "../api";
 
 const API_URL = `${API_BASE}/orders`;
 
@@ -16,9 +17,9 @@ function CustomerDashboard() {
   useEffect(() => {
     let isMounted = true;
 
-    const fetchOrders = async () => {
+    const fetchOrders = async ({ showLoading = true } = {}) => {
       try {
-        setLoading(true);
+        if (showLoading) setLoading(true);
         setError("");
 
         const token = localStorage.getItem("token");
@@ -57,7 +58,7 @@ function CustomerDashboard() {
           setError(err.message || "Unable to load order statistics.");
         }
       } finally {
-        if (isMounted) {
+        if (isMounted && showLoading) {
           setLoading(false);
         }
       }
@@ -65,8 +66,49 @@ function CustomerDashboard() {
 
     fetchOrders();
 
+    // Listen for real-time order updates via Socket.IO
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    const socket = io(API_BASE_URL, {
+      auth: { token },
+      transports: ["polling"],
+    });
+
+    const handleOrderUpdated = (payload) => {
+      console.log("[CustomerDashboard] order-updated received:", payload);
+      fetchOrders({ showLoading: false });
+    };
+
+    const handleConnect = () => {
+      console.log("[CustomerDashboard] socket connected");
+    };
+
+    const handleConnectError = (err) => {
+      console.error("[CustomerDashboard] socket connection error:", err.message);
+    };
+
+    const handleDisconnect = (reason) => {
+      console.log("[CustomerDashboard] socket disconnected:", reason);
+    };
+
+    socket.on("connect", handleConnect);
+    socket.on("order-updated", handleOrderUpdated);
+    socket.on("connect_error", handleConnectError);
+    socket.on("disconnect", handleDisconnect);
+
     return () => {
       isMounted = false;
+      socket.off("connect", handleConnect);
+      socket.off("order-updated", handleOrderUpdated);
+      socket.off("connect_error", handleConnectError);
+      socket.off("disconnect", handleDisconnect);
+      socket.disconnect();
     };
   }, []);
 

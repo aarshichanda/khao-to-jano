@@ -1,9 +1,10 @@
 import express from "express";
 import Coupon from "../models/coupon.model.js";
+import validate from "../middleware/validate.middleware.js";
+import { couponValidationSchema } from "../validators/coupon.validator.js";
 
 const router = express.Router();
-
-router.post("/validate", async (req, res) => {
+router.post("/validate", validate(couponValidationSchema), async (req, res) => {
   try {
     const { couponCode, orderTotal } = req.body;
 

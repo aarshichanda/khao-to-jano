@@ -8,6 +8,12 @@ import OwnerApplication from "../models/ownerApplication.model.js";
 import Restaurant from "../models/restaurant.model.js";
 import { sendEmail } from "../utils/sendEmail.js";
 import { JWT_SECRET } from "../config/env.js";
+import validate from "../middleware/validate.middleware.js";
+import { registerSchema } from "../validators/auth.validator.js";
+import { loginSchema } from "../validators/auth.validator.js";
+import { forgotPasswordSchema } from "../validators/auth.validator.js";
+import { resetPasswordSchema } from "../validators/auth.validator.js";
+import { activateOwnerSchema } from "../validators/auth.validator.js";
 
 const router = express.Router();
 
@@ -25,7 +31,7 @@ const normalizeUsername = (value) =>
   typeof value === "string" ? value.trim().toLowerCase() : "";
 
 // POST /api/auth/register
-router.post("/register", async (req, res) => {
+router.post("/register", validate(registerSchema), async (req, res) => {
   try {
     const { name, username, email, phone, password } = req.body;
 
@@ -98,7 +104,7 @@ router.post("/register", async (req, res) => {
 
 // POST /api/auth/login
 // Supports email login and restaurant-owner username login.
-router.post("/login", async (req, res) => {
+router.post("/login", validate(loginSchema), async (req, res) => {
   try {
     const identifier =
       typeof req.body.identifier === "string"
@@ -176,7 +182,10 @@ router.post("/login", async (req, res) => {
 /* PASSWORD RESET ROUTES */
 
 // POST /api/auth/forgot-password
-router.post("/forgot-password", async (req, res) => {
+router.post(
+  "/forgot-password",
+  validate(forgotPasswordSchema),
+  async (req, res) => {
   const genericMessage =
     "If an account exists for this email, password reset instructions will be sent.";
 
@@ -280,8 +289,12 @@ router.post("/forgot-password", async (req, res) => {
   }
 });
 
+
 // POST /api/auth/reset-password
-router.post("/reset-password", async (req, res) => {
+router.post(
+  "/reset-password",
+  validate(resetPasswordSchema),
+  async (req, res) => {
   try {
     const { token, password, confirmPassword } = req.body;
 
@@ -351,7 +364,10 @@ router.post("/reset-password", async (req, res) => {
 
 // POST /api/auth/activate-owner
 // Activates an approved restaurant-owner application.
-router.post("/activate-owner", async (req, res) => {
+router.post(
+  "/activate-owner",
+  validate(activateOwnerSchema),
+  async (req, res) => {
   let user = null;
   let createdUser = false;
   let claimedRestaurantId = null;
